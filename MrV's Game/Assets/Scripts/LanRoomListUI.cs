@@ -121,20 +121,4 @@ public class LanRoomListUI : MonoBehaviour
         SceneManager.LoadScene(selectedRoom.sceneName);
     }
 
-
-    private System.Collections.IEnumerator DelayedJoin()
-    {
-        yield return new WaitForSeconds(0.1f); // small delay to avoid race condition after shutdown
-
-        Debug.Log("[LAN JOIN] Starting client after delay...");
-        bool success = NetworkManager.Singleton.StartClient();
-
-        
-        if (!success)
-        {
-            warningText.text = "Failed to join room.";
-            Debug.LogWarning("[LAN JOIN] Client failed to start.");
-        }
-    }
-
 }

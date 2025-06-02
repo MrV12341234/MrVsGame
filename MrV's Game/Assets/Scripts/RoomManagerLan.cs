@@ -52,6 +52,8 @@ public class RoomManagerLan : NetworkBehaviour
 
     public void OnJoinClicked()
     {
+        Debug.Log("[LAN DEBUG] NetworkManager.Singleton = " + NetworkManager.Singleton);
+
         string name = nameInputField?.text.Trim() ?? "";
 
         if (string.IsNullOrEmpty(name))
@@ -85,24 +87,11 @@ public class RoomManagerLan : NetworkBehaviour
         else
         {
             Debug.Log("[RoomManagerLan] Starting Client...");
-            
-            // Apply the stored IP before trying to connect
-            string ip = PlayerPrefs.GetString("JoinLAN_IP", "127.0.0.1");
-            var transport = (UnityTransport)NetworkManager.Singleton.NetworkConfig.NetworkTransport;
-            transport.ConnectionData.Address = ip;
-            transport.ConnectionData.Port = 7777;
 
+            string ip = PlayerPrefs.GetString("JoinLAN_IP", "127.0.0.1");
             Debug.Log($"[RoomManagerLan] Client will attempt to connect to: {ip}");
-            
-            NetworkManager.Singleton.OnClientConnectedCallback += (clientId) =>
-            {
-                if (clientId == NetworkManager.Singleton.LocalClientId)
-                {
-                    Debug.Log("[RoomManagerLan] Client connected. Waiting for host to spawn player...");
-                }
-            };
-            
-            NetworkManager.Singleton.StartClient();
+
+            LanNetworkManager.Instance.JoinLanGame(ip); //  this function inside LanNetworkManager calls StartClient();
         }
     }
 

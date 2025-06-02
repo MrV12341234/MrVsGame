@@ -33,10 +33,13 @@ public class LanNetworkManager : MonoBehaviour
         GameMode.IsLAN = true;
 
         var unityTransport = NetworkManager.Singleton.GetComponent<Unity.Netcode.Transports.UTP.UnityTransport>();
+        Debug.LogError("[LanNetworkManager] var Unity Transport attached");
         if (unityTransport != null)
         {
             unityTransport.SetConnectionData(ipAddress, 7777); // default port
+            Debug.LogError("[LanNetworkManager] SetConnectionData complete, Starting client");
             NetworkManager.Singleton.StartClient();
+            Debug.Log("Client started");
         }
         else
         {
