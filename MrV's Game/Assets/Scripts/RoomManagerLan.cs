@@ -2,6 +2,7 @@ using Unity.Netcode;
 using UnityEngine;
 using TMPro;
 using System.Collections;
+using Unity.Netcode.Transports.UTP;
 using UnityEngine.SceneManagement;
 
 [NetworkMode(NetworkMode.LAN)]
@@ -84,6 +85,15 @@ public class RoomManagerLan : NetworkBehaviour
         else
         {
             Debug.Log("[RoomManagerLan] Starting Client...");
+            
+            // Apply the stored IP before trying to connect
+            string ip = PlayerPrefs.GetString("JoinLAN_IP", "127.0.0.1");
+            var transport = (UnityTransport)NetworkManager.Singleton.NetworkConfig.NetworkTransport;
+            transport.ConnectionData.Address = ip;
+            transport.ConnectionData.Port = 7777;
+
+            Debug.Log($"[RoomManagerLan] Client will attempt to connect to: {ip}");
+            
             NetworkManager.Singleton.OnClientConnectedCallback += (clientId) =>
             {
                 if (clientId == NetworkManager.Singleton.LocalClientId)
@@ -91,6 +101,7 @@ public class RoomManagerLan : NetworkBehaviour
                     Debug.Log("[RoomManagerLan] Client connected. Waiting for host to spawn player...");
                 }
             };
+            
             NetworkManager.Singleton.StartClient();
         }
     }
