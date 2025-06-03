@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 39b481478d7f15a419ad1c9f4f302e8c, type: 3}
+  m_Name: Flags
+  m_EditorClassIdentifier: 
+  category: Flags
+  questions:
+  - questionText: What Flag is this?
+    answers:
+    - Spain
+    - Egypt
+    - Morocco
+    - Colombia
+    correctAnswer: 1
+    questionImage: {fileID: 21300000, guid: 9e9dba78f41fa0b4c83188fb68926df3, type: 3}
+  - questionText: Which country is this flag?
+    answers:
+    - USA
+    - Maple
+    - Canada
+    - Mexico
+    correctAnswer: 3
+    questionImage: {fileID: 21300000, guid: a9912d52ee2416a4b9440732ae0e0795, type: 3}
+  - questionText: What flag is this??
+    answers:
+    - Egypt
+    - Police
+    - Ukraine
+    - Estonia
+    correctAnswer: 4
+    questionImage: {fileID: 21300000, guid: 5578cefe0be52a14097bd93ace051534, type: 3}
+  - questionText: 
+    answers: []
+    correctAnswer: 0
+    questionImage: {fileID: 0}
+  - questionText: 
+    answers: []
+    correctAnswer: 0
+    questionImage: {fileID: 0}

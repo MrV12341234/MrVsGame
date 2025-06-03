@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/Menu.unity
+    guid: 5a686e31f18f5ef46bcf0b005a0eb17e
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Cartoon City.unity
+    guid: 0b5e40e13361f4b41a20e77320089656
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Desert Storm.unity
+    guid: f761aaad8377e7b4f9124dc131f14183
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Sky Arena.unity
+    guid: 38f863b4e757ebf4dabc6b18e9cdb05e
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Industry Baby.unity
+    guid: 4fa5afaa1ff1eb2498aa469d4a5b4c52
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Dust 2.unity
+    guid: 3a983064ca218454f95852b82d1487b0
+  m_configObjects:
+    com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  m_UseUCBPForAssetBundles: 0
