@@ -9,7 +9,9 @@
 [Bb]uilds/
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
-[Aa]ssets/GeographyStuff/Question Sets
+[Aa]ssets/GeographyStuff/Question Sets/
+MrV's Game/Assets/GeographyStuff/
+MrV's Game/Assets/Resources/Questions/
 
 # MemoryCaptures can get excessive in size.
 # They also could contain extremely sensitive data
@@ -47,6 +49,7 @@ ExportedObj/
 *.mdb
 *.opendb
 *.VC.db
+
 
 # Unity3D generated meta files
 *.pidb.meta

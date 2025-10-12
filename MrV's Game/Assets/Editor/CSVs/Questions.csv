@@ -1,28 +1,76 @@
-Which country is this?,Europe,Finland,Sweden,Norway,Estonia
-Which country is this?,Europe,Sweden,Finland,Norway,Estonia
-Which country is this?,Europe,Norway,Finland,Estonia,Sweden
-Which country is this?,Europe,Ireland,UK,Spain,France
-Which country is this?,Europe,UK,Ireland,Spain,France
-Which country is this?,Europe,Spain,UK,Ireland,France
-Which country is this?,Europe,Portugal,UK,Ireland,Spain
-Which country is this?,Europe,France,Ireland,Spain,UK
-Which country is this?,Europe,Germany,Denmark,Switzerland,Poland
-Which country is this?,Europe,Germany,Denmark,Switzerland,Poland
-Which country is this?,Europe,Denmark,Germany,Switzerland,Poland
-Which country is this?,Europe,Switzerland,Denmark,Germany,Poland
-Which country is this?,Europe,Poland,Germany,Denmark,Switzerland
-Which country is this?,Europe,Ukraine,Romania,Serbia,Belarus
-Which country is this?,Europe,Romania,Serbia,Belarus,Ukraine
-Which country is this?,Europe,Serbia,Belarus,Romania,Ukraine
-Which country is this?,Europe,Belarus,Ukraine,Romania,Serbia
-Which country is this?,Europe,Greece,Italy,Macedonia,Romania
-Which country is this?,Europe,Italy,Greece,Macedonia,Romania
-Which country is this?,Europe,Italy,Greece,Serbia,Romania
-Which country is this?,Europe,Macedonia,Greece,Serbia,Romania
-What is the capital of Spain?,Europe,Madrid,Paris,Berlin,Rome
-What is the capital of France?,Europe,Paris,Madrid,Berlin,Rome
-What is the capital of Germany,Europe,Berlin,Rome,Paris,Madrid
-What is the capital of Italy?,Europe,Rome,Madrid,Paris,Berlin
-What is the capital of United Kingdom?,Europe,London,Madrid,Paris,Berlin
-What currency money does Europe use?,Europe,Euro,Dollar,European Dollar,Peso
-What is the most populous country in Europe?,Europe,Russia,UK,Germany,France
+﻿群岛,Landforms,Archipelago,Atoll,Basin,Bay
+A group of islands.,Landforms,Archipelago,Atoll,Basin,Bay
+环礁,Landforms,Atoll,Butte,Canal,Canyon
+A ring-shaped coral reef or island surrounding a lagoon; formed as a volcano subsides.,Landforms,Atoll,Canyon,Cape,Cave
+盆地,Landforms,Basin,Cape,Cave,Channel
+Area of land drained by a river and its tributaries; like a big bowl.,Landforms,Basin,Continent,Desert,Estuary
+湾,Landforms,Bay,Col,Continent,Desert
+"Large body of water connected to an ocean or sea, surrounded on three sides by land.",Landforms,Bay,Hill,Island,Isthmus
+孤峰,Landforms,Butte,Estuary,Fjord,Glacier
+An isolated hill with steep sides and a flat top; narrower than a mesa or plateau.,Landforms,Butte,Lowland,Mesa,Mountain
+运河,Landforms,Canal,Hill,Island,Isthmus
+"A long, narrow waterway used for shipping or irrigation.",Landforms,Canal,Plain,Plateau,Pond
+峡谷,Landforms,Canyon,Lake,Landform,Lowland
+"A deep, narrow valley with steep sides, often with a river at the bottom.",Landforms,Canyon,Two Mountains,Stream,Tributary
+岬,Landforms,Cape,Mesa,Mountain,Ocean
+A pointed piece of land that sticks out into a body of water.,Landforms,Cape,Waterfall,Wetland,Archipelago
+洞穴,Landforms,Cave,Peninsula,Plain,Plateau
+A natural hollow space underground.,Landforms,Cave,Bay,Butte,Canal
+水道,Landforms,Channel,Pond,River,Sand Dunes
+A wide strait or waterway between two nearby landmasses.,Landforms,Channel,Cave,Col,Continent
+山坳,Landforms,Col,Sea,Stream,Tributary
+The lowest point on a ridge between two peaks; a pass.,Landforms,Col,Fjord,Glacier,Hill
+七大洲,Landforms,Continent,Valley,Volcano,Waterfall
+One of the seven large landmasses on Earth.,Landforms,Continent,Lake,Landform,Lowland
+沙漠,Landforms,Desert,Wetland,Archipelago,Atoll
+An area of land with very little precipitation.,Landforms,Desert,Ocean,Peninsula,Plain
+河口,Landforms,Estuary,Basin,Bay,Butte
+An area where freshwater mixes with salt water.,Landforms,Estuary,River,Sand Dunes,Sea
+峡湾,Landforms,Fjord,Canal,Canyon,Cape
+"A long, narrow, deep inlet of the sea between high cliffs formed by glaciers.",Landforms,Fjord,Valley,Volcano,Waterfall
+冰川,Landforms,Glacier,Cave,Channel,Col
+"A large, slow-moving mass of ice formed from compacted snow.",Landforms,Glacier,Atoll,Basin,Bay
+小丘,Landforms,Hill,Continent,Desert,Estuary
+A mound of earth smaller than a mountain.,Landforms,Hill,Canyon,Cape,Cave
+岛,Landforms,Island,Fjord,Glacier,Hill
+"Land area, smaller than a continent, completely surrounded by water.",Landforms,Island,Continent,Desert,Estuary
+地峡,Landforms,Isthmus,Island,Lake,Landform
+A narrow strip of land connecting two larger land areas.,Landforms,Isthmus,Hill,Island,Lake
+湖,Landforms,Lake,Lowland,Mesa,Mountain
+A sizable inland body of water.,Landforms,Lake,Mesa,Mountain,Ocean
+地貌,Landforms,Landform,Ocean,Peninsula,Plain
+A natural feature of Earth’s surface.,Landforms,Landform,Plateau,Pond,River
+低地,Landforms,Lowland,Plateau,Pond,River
+Land that is lower than the surrounding land.,Landforms,Lowland,Stream,Tributary,Valley
+台面,Landforms,Mesa,Sand Dunes,Sea,Stream
+A landform with steep sides and a flat top.,Landforms,Mesa,Wetland,Archipelago,Atoll
+山,Landforms,Mountain,Tributary,Valley,Volcano
+Land with steep sides rising sharply (about 330 feet or more) above surrounding land.,Landforms,Mountain,Butte,Canal,Canyon
+海洋,Landforms,Ocean,Waterfall,Wetland,Archipelago
+One of the five major bodies of saltwater surrounding the continents.,Landforms,Ocean,Channel,Col,Continent
+半岛,Landforms,Peninsula,Atoll,Basin,Bay
+"Land jutting into a lake or ocean, surrounded on three sides by water.",Landforms,Peninsula,Fjord,Glacier,Hill
+平川,Landforms,Plain,Butte,Canal,Canyon
+"Level land, usually low elevation, often covered with grasses.",Landforms,Plain,Lake,Landform,Lowland
+高原,Landforms,Plateau,Cape,Cave,Channel
+Flat or rolling land at high elevation (about 90–900 m high).,Landforms,Plateau,Ocean,Peninsula,Plain
+池塘,Landforms,Pond,Col,Continent,Desert
+A small body of still water; like a small lake.,Landforms,Pond,Sand Dunes,Sea,Stream
+河,Landforms,River,Estuary,Fjord,Glacier
+A large natural stream of water that flows through the land.,Landforms,River,Volcano,Waterfall,Wetland
+沙丘,Landforms,Sand Dunes,Hill,Island,Isthmus
+Hills or mounds of sand created by wind near oceans or deserts.,Landforms,Sand Dunes,Basin,Bay,Butte
+海,Landforms,Sea,Lake,Landform,Lowland
+A large body of salt water completely or partly surrounded by land.,Landforms,Sea,Cape,Cave,Channel
+溪流,Landforms,Stream,Mesa,Mountain,Ocean
+"A small, narrow river.",Landforms,Stream,Desert,Estuary,Fjord
+支流,Landforms,Tributary,Peninsula,Plain,Plateau
+A smaller river or stream that flows into a larger one.,Landforms,Tributary,Island,Isthmus,Lake
+山谷,Landforms,Valley,Pond,River,Sand Dunes
+An area of low land between hills or mountains.,Landforms,Valley,Mesa,Mountain,Ocean
+火山,Landforms,Volcano,Sea,Stream,Tributary
+A mountain or hill formed when lava and ash erupt from Earth’s interior.,Landforms,Volcano,Plateau,Pond,River
+瀑布,Landforms,Waterfall,Valley,Volcano,Wetland
+Water flowing vertically over a steep drop in a river.,Landforms,Waterfall,Stream,Tributary,Valley
+湿地,Landforms,Wetland,Archipelago,Atoll,Basin
+Lowland saturated with water.,Landforms,Wetland,Archipelago,Atoll,Basin
