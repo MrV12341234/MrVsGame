@@ -2,6 +2,9 @@
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
+# On a new line, add the path to the folder you want to ignore. 
+# To ignore an entire folder and all its contents, use a trailing slash.
+# see my example below for ignoring GeographyStuff. 
 [Ll]ibrary/
 [Tt]emp/
 [Oo]bj/
@@ -9,8 +12,9 @@
 [Bb]uilds/
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
-[Aa]ssets/GeographyStuff/Question Sets/
+
 MrV's Game/Assets/GeographyStuff/
+MrV's Game/Assets/GeographyStuff/Photos/
 MrV's Game/Assets/Resources/Questions/
 
 # MemoryCaptures can get excessive in size.
