@@ -1073,6 +1073,18 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls:
+      - m_Target: {fileID: 661767677}
+        m_TargetAssemblyTypeName: RoomManagerLan, Assembly-CSharp
+        m_MethodName: OnJoinClicked
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
       - m_Target: {fileID: 661767675}
         m_TargetAssemblyTypeName: RoomManager, Assembly-CSharp
         m_MethodName: ConnectToServer
@@ -1607,6 +1619,8 @@ GameObject:
   m_Component:
   - component: {fileID: 661767674}
   - component: {fileID: 661767675}
+  - component: {fileID: 661767676}
+  - component: {fileID: 661767677}
   m_Layer: 0
   m_Name: RoomManager
   m_TagString: Untagged
@@ -1653,12 +1667,72 @@ MonoBehaviour:
   - {fileID: 2129814510}
   - {fileID: 60077930}
   roomCamera: {fileID: 1106446735}
-  roomNameToJoin: test
+  roomNameToJoin: Dust2
   Quiz: {fileID: 1698541350}
   correctAnswer: {fileID: 2476373275671525336}
   wrongAnswer: {fileID: 8305983709246033636}
   showQuiz: 1
   correctAnswerCounter: 0
+--- !u!114 &661767676
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 661767672}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 4231371788
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
+--- !u!114 &661767677
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 661767672}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33e80cd6a9165fb4da2be94034ad79ee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ShowTopMostFoldoutHeaderGroup: 1
+  roomCode: Dust2
+  roomNameToJoin: Dust2
+  playerPrefab: {fileID: 1217487076301032980, guid: 50b297804a6cdbc4c8ffb2ffe4830b26, type: 3}
+  spawnPoints:
+  - {fileID: 646453450}
+  - {fileID: 1482220800}
+  - {fileID: 903353507}
+  - {fileID: 1827279261}
+  - {fileID: 265593960}
+  - {fileID: 2129814510}
+  - {fileID: 60077930}
+  - {fileID: 228428978}
+  roomCamera: {fileID: 1106446735}
+  Quiz: {fileID: 1698541350}
+  correctAnswer: {fileID: 2476373275671525336}
+  wrongAnswer: {fileID: 8305983709246033636}
+  showQuiz: 1
+  correctAnswerCounter: 0
+  nameEntryUI: {fileID: 1256732746}
+  nameInputField: {fileID: 1826694217}
+  connectingUI: {fileID: 650853132}
+  warningText: {fileID: 0}
 --- !u!1 &675157398
 GameObject:
   m_ObjectHideFlags: 0
@@ -5065,7 +5139,8 @@ PrefabInstance:
       propertyPath: m_AnchoredPosition.y
       value: -250
       objectReference: {fileID: 0}
-    m_RemovedComponents: []
+    m_RemovedComponents:
+    - {fileID: 4222055125519726422, guid: c01f50c579e317549bf4bd0d2c31689e, type: 3}
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []

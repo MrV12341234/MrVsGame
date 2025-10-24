@@ -117,7 +117,7 @@ public class LanRoomListUI : MonoBehaviour
         PlayerPrefs.SetString("JoinLAN_IP", selectedRoom.ipAddress);
         PlayerPrefs.SetInt("LAN_IsHost", 0); // this player is a client
 
-        // Load the map scene (you must know which scene to load here)
+        // Load the map scene (you must know which scene to load here). Name in dropdown must match
         SceneManager.LoadScene(selectedRoom.sceneName);
     }
 

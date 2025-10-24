@@ -179,16 +179,8 @@ public class RoomManagerLan : NetworkBehaviour
     /// </summary>
     public void getWrongAnswer()
     {
-        // Local feedback only
+        // Show local “wrong” feedback only. DO NOT advance questions here.
         StartCoroutine(showWrongAnswer());
-
-        // Load another question locally
-        var setup = Quiz ? Quiz.GetComponentInChildren<QuestionSetup>() : null;
-        if (setup)
-        {
-            if (setup.feedbackText) setup.feedbackText.text = "";
-            setup.InitializeNewQuestion();
-        }
     }
 
     private IEnumerator showCorrectAnswer()

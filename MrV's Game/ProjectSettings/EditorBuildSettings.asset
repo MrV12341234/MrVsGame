@@ -23,6 +23,12 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Bananadev MFPS Pack v2/Scenes/Dust 2.unity
     guid: 3a983064ca218454f95852b82d1487b0
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Mirage.unity
+    guid: a00cf95c4593ee347b83ab6afdf03694
+  - enabled: 1
+    path: Assets/Bananadev MFPS Pack v2/Scenes/Rainbow Road.unity
+    guid: 7ead2704cf0d70b4895f17531d9c0a23
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
