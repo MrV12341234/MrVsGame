@@ -12,6 +12,8 @@ public class PlayerHealthLan : NetworkBehaviour
     [Header("UI Set Up")]
     public TextMeshProUGUI healthText;
     public Image healthFillImage;
+    
+    private ulong _lastAttackerClientId = ulong.MaxValue;
 
     private NetworkVariable<int> currentHealth = new NetworkVariable<int>(
         value: 100,
@@ -24,7 +26,6 @@ public class PlayerHealthLan : NetworkBehaviour
         {
             SetInitialHealthServerRpc(maxHealth);
         }
-
         currentHealth.OnValueChanged += (oldVal, newVal) => UpdateUI(newVal);
     }
 
@@ -32,10 +33,11 @@ public class PlayerHealthLan : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Fall damage
+        // Fall off map damage
         if (transform.position.y < -70)
         {
-            TakeDamageServerRpc(999);
+            // kill player for falling and pass our own id to killfeed as attacker for attribution
+            TakeDamageServerRpc(999, NetworkManager.Singleton.LocalClientId);
         }
     }
 
@@ -56,15 +58,28 @@ public class PlayerHealthLan : NetworkBehaviour
     }
 
     [ServerRpc(RequireOwnership = false)]
-    public void TakeDamageServerRpc(int amount)
+    public void TakeDamageServerRpc(int amount, ulong attackerClientId)
     {
         if (currentHealth.Value <= 0) return;
+        
+        // track latest attacker for killfeed attribution
+        _lastAttackerClientId = attackerClientId;
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - amount);
 
         if (currentHealth.Value <= 0)
         {
-            Debug.Log("[LAN] Player died");
+            // ---- KILLFEED (server) ----
+            string victimName = ResolveNameForClient(OwnerClientId);
+            string killerName = ResolveNameForClient(_lastAttackerClientId);
+
+            // If you prefer to skip environmental/self kills:
+            // if (_lastAttackerClientId == ulong.MaxValue || _lastAttackerClientId == OwnerClientId) { /* skip or set "Environment" */ }
+
+            if (KillfeedManagerLAN.Instance != null)
+            {
+                KillfeedManagerLAN.Instance.ReportKill(killerName, victimName);
+            }
             SubmitDeathClientRpc();
         }
     }
@@ -95,4 +110,20 @@ public class PlayerHealthLan : NetworkBehaviour
             gameObject.SetActive(false);
         }
     }
+    
+    private string ResolveNameForClient(ulong clientId)
+    {
+        // Environment / unknown
+        if (clientId == ulong.MaxValue) return "Environment";
+
+        if (NetworkManager.Singleton != null &&
+            NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var nc) &&
+            nc.PlayerObject != null)
+        {
+            var ps = nc.PlayerObject.GetComponent<PlayerSetupLan>();
+            if (ps != null) return ps.GetPlayerNameString();
+        }
+        return $"Player_{clientId}";
+    }
+    
 }

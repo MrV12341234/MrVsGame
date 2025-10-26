@@ -2,6 +2,7 @@ using Unity.Netcode;
 using UnityEngine;
 using TMPro;
 using System.Collections;
+using System.Collections.Generic;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.SceneManagement;
 
@@ -37,6 +38,9 @@ public class RoomManagerLan : NetworkBehaviour
     public TMP_InputField nameInputField;
     public GameObject connectingUI;
     public TextMeshProUGUI warningText;
+    
+    // Add a dictionary to track player names on the server
+    private readonly Dictionary<ulong, string> playerNames = new Dictionary<ulong, string>();
 
     private void Awake()
     {
@@ -71,7 +75,7 @@ public class RoomManagerLan : NetworkBehaviour
 
         PlayerPrefs.SetString("PlayerName", name);
         currentName = name;
-
+        
         if (nameEntryUI) nameEntryUI.SetActive(false);
         if (connectingUI) connectingUI.SetActive(true);
 
@@ -118,6 +122,29 @@ public class RoomManagerLan : NetworkBehaviour
             currentName = _name;
         }
     }
+    
+    /// <summary>
+    /// Store player name when they first connect
+    /// </summary>
+    public void StorePlayerName(ulong clientId, string name)
+    {
+        if (!IsServer) return;
+        
+        playerNames[clientId] = name;
+        Debug.Log($"[RoomManagerLan] Stored name '{name}' for client {clientId}");
+    }
+
+    /// <summary>
+    /// Get stored player name for respawn
+    /// </summary>
+    public string GetStoredPlayerName(ulong clientId)
+    {
+        if (playerNames.ContainsKey(clientId))
+        {
+            return playerNames[clientId];
+        }
+        return $"Player_{clientId}";
+    }
 
     /// <summary>
     /// LOCAL ONLY — show the quiz on this client (no RPC).
@@ -159,8 +186,8 @@ public class RoomManagerLan : NetworkBehaviour
             _localCorrectCount = 0;
             HideQuizAndLockCursorLocal();
 
-            // Ask the server to respawn THIS client
-            RequestRespawnServerRpc();
+            // Ask the server to respawn THIS client. Get their gamertag and then respawn
+            RequestRespawn();
         }
         else
         {
@@ -214,7 +241,7 @@ public class RoomManagerLan : NetworkBehaviour
         Cursor.visible = false;
     }
 
-    private void SpawnPlayerFor(ulong clientId)
+    private void SpawnPlayerFor(ulong clientId, string chosenName)
     {
         if (!IsServer)
         {
@@ -229,12 +256,26 @@ public class RoomManagerLan : NetworkBehaviour
             return;
         }
 
-        Vector3 spawnPos = GetRandomSpawnPos();
-        Debug.Log($"[LAN] Spawning player for client {clientId} at: {spawnPos}");
+        var spawnPos = GetRandomSpawnPos();
+        var go = Instantiate(playerPrefab, spawnPos, Quaternion.identity);
+        
+        var netObj = go.GetComponent<NetworkObject>();
+        netObj.SpawnAsPlayerObject(clientId);  
+        
+        // Store the name for future respawns
+        StorePlayerName(clientId, chosenName);
+        
+        // Set the name on the PlayerSetup component
+        var setup = go.GetComponent<PlayerSetupLan>();
+        if (setup != null)
+        {
+            setup.ServerSetName(chosenName);
+        }
 
-        var netObj = Instantiate(playerPrefab, spawnPos, Quaternion.identity)
-            .GetComponent<NetworkObject>();
-        netObj.SpawnAsPlayerObject(clientId);
+        Debug.Log($"[LAN][Server] Spawned PlayerObject. RequestedOwner={clientId}, ActualOwner={netObj.OwnerClientId}, NetworkObjectId={netObj.NetworkObjectId}");
+        // Note: The name is now set by the client in PlayerSetupLan.OnNetworkSpawn
+        // but we ensure it's stored server-side for respawns
+        
     }
 
     /// <summary>
@@ -245,11 +286,13 @@ public class RoomManagerLan : NetworkBehaviour
     {
         if (IsServer)
         {
-            // Host respawning self
-            SpawnPlayerFor(NetworkManager.Singleton.LocalClientId);
+            // Host respawning self - use stored name
+            string hostName = GetStoredPlayerName(NetworkManager.Singleton.LocalClientId);
+            SpawnPlayerFor(NetworkManager.Singleton.LocalClientId, hostName);
         }
         else
         {
+            // Client requests respawn - server will use stored name
             RequestRespawnServerRpc();
         }
     }
@@ -257,9 +300,13 @@ public class RoomManagerLan : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     private void RequestRespawnServerRpc(ServerRpcParams rpcParams = default)
     {
-        // Spawn a player object for the client who sent this RPC
-        SpawnPlayerFor(rpcParams.Receive.SenderClientId);
+        // Spawn a player object for the client who sent this RPC, pass in the gamertag also so host assigns
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        string playerName = GetStoredPlayerName(clientId);
+            
+        SpawnPlayerFor(clientId, playerName);
     }
+
 
     public Vector3 GetRandomSpawnPos()
     {
@@ -303,8 +350,17 @@ public class RoomManagerLan : NetworkBehaviour
             }
             else
             {
+                // Get the player's name - for host we have it, for clients they'll send via RPC
+                string playerName = $"Player_{clientId}";
+                
+                // For local host, we can get it from PlayerPrefs
+                if (clientId == NetworkManager.Singleton.LocalClientId)
+                {
+                    playerName = PlayerPrefs.GetString("PlayerName", playerName);
+                }
+                
                 // Server spawns the player object for the new client
-                SpawnPlayerFor(clientId);
+                SpawnPlayerFor(clientId, playerName);
             }
         }
 
@@ -312,13 +368,16 @@ public class RoomManagerLan : NetworkBehaviour
         if (clientId == NetworkManager.Singleton.LocalClientId)
         {
             if (connectingUI) connectingUI.SetActive(false);
-            Debug.Log("[RoomManagerLan] Local client connected – hiding connecting UI.");
         }
     }
 
     private void OnClientDisconnected(ulong clientId)
     {
         Debug.Log($"[RoomManagerLan] OnClientDisconnected {clientId}");
-        // optional: cleanup, UI, etc.
+        // Remove from name dictionary when player disconnects
+        if (IsServer && playerNames.ContainsKey(clientId))
+        {
+            playerNames.Remove(clientId);
+        }
     }
 }

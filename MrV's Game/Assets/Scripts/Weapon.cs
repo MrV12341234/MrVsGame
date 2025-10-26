@@ -194,15 +194,21 @@ public class Weapon : MonoBehaviour
                             Debug.Log("[LAN] Skipping self-hit");
                             continue;
                         }
-                        // LAN damage
+                        
+                        // LAN damage & pass shooter (attacker) clientId gamertag to the server
                         var health = hit.transform.GetComponent<PlayerHealthLan>();
                         if (health != null)
                         {
-                            health.TakeDamageServerRpc(damagePerShot);
+                            ulong attackerId =
+                                (localNetworkObject != null) ? localNetworkObject.OwnerClientId :
+                                    (NetworkManager.Singleton != null ? NetworkManager.Singleton.LocalClientId : 0UL);
+
+                            health.TakeDamageServerRpc(damagePerShot, attackerId); // pass damage and attackers gamertag so we have the gamertag of the person who hit, for killfeed
+                            
                         }
                         Instantiate(playerHitParticle, hit.point, rotation);
                     }
-                    else // Photon
+                    else // Photon damage
                     {
                         PhotonView target = hit.transform.GetComponent<PhotonView>();
                         PhotonView shooter = GetComponentInParent<PhotonView>();

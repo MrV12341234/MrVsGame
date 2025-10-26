@@ -14,14 +14,23 @@ public class PlayerSetupLan : NetworkBehaviour
     [Header("Hat Setup")]
     public Transform hatParent;
 
-    private NetworkVariable<byte> hatIndex = new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
-    private NetworkVariable<FixedString32Bytes> playerName = new NetworkVariable<FixedString32Bytes>("Player", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    private NetworkVariable<byte> hatIndex =
+        new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+
+    // SERVER-WRITABLE: Only server can write this
+    private NetworkVariable<FixedString32Bytes> playerName =
+        new NetworkVariable<FixedString32Bytes>("Player",
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+    // allow other scripts (server-side killfeed) to read
+    public string GetPlayerNameString() => playerName.Value.ToString();
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
 
-        Debug.Log("[LAN] PlayerSetupLan.cs is running!");
+        Debug.Log($"[LAN] PlayerSetupLan.OnNetworkSpawn — OwnerClientId={OwnerClientId} LocalClientId={NetworkManager.Singleton.LocalClientId} IsOwner={IsOwner}");
 
         bool isLocal = IsOwner;
 
@@ -31,26 +40,25 @@ public class PlayerSetupLan : NetworkBehaviour
         if (tpPlayer) tpPlayer.SetActive(!isLocal);
         if (nameText) nameText.gameObject.SetActive(!isLocal);
 
-        // --- AUDIO LISTENER RULE: exactly one per process; only local player keeps theirs ---
-        // Disable all listeners under this player first…
+        // AUDIO LISTENER rule
         var listeners = GetComponentsInChildren<AudioListener>(true);
         foreach (var l in listeners) l.enabled = false;
-
-        // …then, if this is the local player, enable the one on the FP camera (if present)
         if (isLocal && fpCamera)
         {
             var camListener = fpCamera.GetComponent<AudioListener>();
             if (camListener) camListener.enabled = true;
         }
-        // ------------------------------------------------------------------------------
 
         if (isLocal)
         {
+            // local cosmetics still owner-writable
             byte savedHat = (byte)PlayerPrefs.GetInt("hatSelected", 0);
             hatIndex.Value = savedHat;
 
-            string localName = PlayerPrefs.GetString("PlayerName", $"Player_{Random.Range(0, 999)}");
-            playerName.Value = localName;
+            // Send our chosen name to the server once per spawn (server writes NV)
+            var localName = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+            
+            SubmitInitialNameServerRpc(localName);
 
             // Delay cursor lock to allow UI to finish transitions
             StartCoroutine(LockCursorDelayed());
@@ -83,5 +91,20 @@ public class PlayerSetupLan : NetworkBehaviour
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         Debug.Log("[LAN] Cursor locked and hidden.");
+    }
+    
+    // Called by server only to set NV safely
+    public void ServerSetName(string s)
+    {
+        var finalName = string.IsNullOrWhiteSpace(s) ? "Player" : s;
+        playerName.Value = new FixedString32Bytes(finalName);
+        Debug.Log($"[LAN][Server] ServerSetName for OwnerClientId={OwnerClientId} -> '{finalName}'");
+    }
+
+    // Owner tells server their chosen name (one tiny RPC)
+    [ServerRpc]
+    private void SubmitInitialNameServerRpc(string chosenName)
+    {
+        ServerSetName(chosenName);
     }
 }
