@@ -9,7 +9,9 @@ public class QuestionSetup : MonoBehaviour
     [SerializeField] 
     public List<QuestionData> questions;
     private QuestionData currentQuestion;
-    private List<QuestionData> unusedQuestions; // Track which questions haven't been used
+    
+    private static List<QuestionData> unusedQuestions; // persists per client.Tracks questions not used
+    private static bool sInitialized = false;          // init guard
     
     [SerializeField]
     private TextMeshProUGUI questionText;
@@ -29,9 +31,17 @@ public class QuestionSetup : MonoBehaviour
     private void Awake()
     {
         GetQuestionsAssets();
-        ResetUnusedQuestions(); // Initialize the unused questions list
+        
+        // Only initialize the unused pool once per client session
+        if (!sInitialized || unusedQuestions == null || unusedQuestions.Count == 0)
+        {
+            ResetUnusedQuestions(); // Initialize the unused questions list
+            sInitialized = true;
+        }
     }
 
+    
+    
     public void InitializeNewQuestion()
     {
         // Clear any previous feedback

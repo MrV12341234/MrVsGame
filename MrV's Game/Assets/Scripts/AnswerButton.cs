@@ -72,19 +72,13 @@ public class AnswerButton : MonoBehaviour
     {
         if (isCorrect)
         {
-            Debug.Log("Correct Answer [LAN]");
             RoomManagerLan.Instance.getCorrectAnswer();
             PlayerPrefs.SetInt("LAN_Score", PlayerPrefs.GetInt("LAN_Score", 0) + 100);
-
-            if (questionSetup.questions.Count > 0 && RoomManagerLan.Instance.correctAnswerCounter < 3)
-            {
-                questionSetup.InitializeNewQuestion();
-            }
         }
         else
         {
             isInDelay = true;
-            Debug.Log("Wrong Answer [LAN]");
+            
             RoomManagerLan.Instance.getWrongAnswer();
             PlayerPrefs.SetInt("LAN_Score", PlayerPrefs.GetInt("LAN_Score", 0) - 100);
 
