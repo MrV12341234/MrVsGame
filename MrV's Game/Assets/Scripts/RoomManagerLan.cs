@@ -26,6 +26,7 @@ public class RoomManagerLan : NetworkBehaviour
     public GameObject correctAnswer;
     public GameObject wrongAnswer;
     public bool showQuiz;
+    [SerializeField] private bool requireQuizBeforeFirstSpawn = true;
 
     // Legacy public counter (UI only)
     [HideInInspector] public int correctAnswerCounter = 0;
@@ -186,12 +187,25 @@ public class RoomManagerLan : NetworkBehaviour
             _localCorrectCount = 0;
             HideQuizAndLockCursorLocal();
 
-            // Ask the server to respawn THIS client. Get their gamertag and then respawn
-            RequestRespawn();
+            // Are we already spawned?
+            bool hasPlayerObject =
+                NetworkManager.Singleton.LocalClient != null &&
+                NetworkManager.Singleton.LocalClient.PlayerObject != null;
+
+            if (!hasPlayerObject && requireQuizBeforeFirstSpawn)
+            {
+                // This is the initial gate – spawn for the first time.
+                RequestInitialSpawn();
+            }
+            else
+            {
+                // This is a post-death quiz – do a regular respawn.
+                RequestRespawn();
+            }
         }
         else
         {
-            // Load next question locally
+            // Load next question locally (unchanged)
             var setup = Quiz ? Quiz.GetComponentInChildren<QuestionSetup>() : null;
             if (setup)
             {
@@ -199,6 +213,7 @@ public class RoomManagerLan : NetworkBehaviour
                 setup.InitializeNewQuestion();
             }
         }
+
     }
 
     /// <summary>
@@ -343,33 +358,63 @@ public class RoomManagerLan : NetworkBehaviour
 
         if (IsServer)
         {
-            // If NGO already created a PlayerObject (or we already spawned one), skip
-            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var nc) && nc.PlayerObject != null)
+            // Do NOT spawn here anymore. We wait until the client passes the quiz and asks to spawn.
+            // Store a best-effort name now; client may set it later too.
+            string playerName = $"Player_{clientId}";
+            if (clientId == NetworkManager.Singleton.LocalClientId)
             {
-                Debug.Log($"[RoomManagerLan] Client {clientId} already has a PlayerObject. Skipping spawn.");
+                playerName = PlayerPrefs.GetString("PlayerName", playerName);
             }
-            else
-            {
-                // Get the player's name - for host we have it, for clients they'll send via RPC
-                string playerName = $"Player_{clientId}";
-                
-                // For local host, we can get it from PlayerPrefs
-                if (clientId == NetworkManager.Singleton.LocalClientId)
-                {
-                    playerName = PlayerPrefs.GetString("PlayerName", playerName);
-                }
-                
-                // Server spawns the player object for the new client
-                SpawnPlayerFor(clientId, playerName);
-            }
+            StorePlayerName(clientId, playerName);
+            Debug.Log($"[RoomManagerLan] (Server) Registered {playerName} for {clientId}. Waiting for initial quiz pass...");
         }
 
-        // If this notification is for the local client, hide the spinner
+        // Local client UI housekeeping
         if (clientId == NetworkManager.Singleton.LocalClientId)
         {
             if (connectingUI) connectingUI.SetActive(false);
+
+            // If we’re gating first spawn, show the quiz now.
+            if (requireQuizBeforeFirstSpawn)
+            {
+                ShowQuiz();
+            }
+            else
+            {
+                // If not gating, go ahead and spawn immediately.
+                RequestInitialSpawn();
+            }
         }
     }
+    
+    /// <summary>
+    /// Client asks the server to spawn their PlayerObject for the first time,
+    /// but only after they’ve passed the initial quiz.
+    /// </summary>
+    public void RequestInitialSpawn()
+    {
+        if (IsServer)
+        {
+            // Host spawning themselves
+            string hostName = GetStoredPlayerName(NetworkManager.Singleton.LocalClientId);
+            SpawnPlayerFor(NetworkManager.Singleton.LocalClientId, hostName);
+        }
+        else
+        {
+            InitialQuizPassedServerRpc();
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    private void InitialQuizPassedServerRpc(ServerRpcParams rpcParams = default)
+    {
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        string playerName = GetStoredPlayerName(clientId);
+        Debug.Log($"[RoomManagerLan] Initial quiz passed by {clientId}. Spawning now...");
+        SpawnPlayerFor(clientId, playerName);
+    }
+
+
 
     private void OnClientDisconnected(ulong clientId)
     {
