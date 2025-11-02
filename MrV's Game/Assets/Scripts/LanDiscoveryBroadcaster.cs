@@ -59,7 +59,7 @@ public class LanDiscoveryBroadcaster : MonoBehaviour
         IPEndPoint endPoint = new IPEndPoint(IPAddress.Broadcast, broadcastPort);
         udpClient.Send(data, data.Length, endPoint);
 
-        Debug.Log($"[LAN BROADCAST] Sent room info: {roomName}");
+        // Debug.Log($"[LAN BROADCAST] Sent room info: {roomName}");
     }
 
     string GetLocalIPAddress()

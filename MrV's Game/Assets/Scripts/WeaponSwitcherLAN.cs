@@ -89,9 +89,16 @@ public class WeaponSwitcherLAN : MonoBehaviour
                 
                 // Update weapon active state
                 LauncherPotatoLAN launcher = weapon.GetComponent<LauncherPotatoLAN>();
+                GrenadeLAN handGrenade = weapon.GetComponent<GrenadeLAN>();
+                
                 if (launcher != null)
                 {
                     launcher.SetWeaponActive(isActive);
+                }
+                if (handGrenade != null)
+                {
+                    handGrenade.SetWeaponActive(isActive);
+                    handGrenade.SetChargeBarActive(isActive);
                 }
             }
 

@@ -231,10 +231,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
-  shootForce: 2
+  shootForce: 3
   arcHeightMultiplier: 0.5
   maxLifetime: 20
-  spinStrength: 5
+  spinStrength: 8
   explosionPrefab: {fileID: 1215189772077101638, guid: 5adfbe7f8f1f8e1439a0500007eefa79, type: 3}
   damage: 100
   damageRadius: 13
