@@ -28,7 +28,7 @@ namespace Photon.Pun
     using System.IO;
     #endif
 
-   
+
     public struct InstantiateParameters
     {
         public int[] viewIDs;

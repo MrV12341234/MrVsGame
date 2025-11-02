@@ -56,9 +56,6 @@ public class LeaderboardManager : MonoBehaviour
             if (_player.CustomProperties["deaths"] != null) _deaths = (int)_player.CustomProperties["deaths"];
             
             playerItem.transform.GetChild(2).GetComponent<TextMeshProUGUI>().text = _kills + " / " + _deaths;
-
-
-
         }
     }
     

@@ -11,7 +11,10 @@ public class PlayerHitAndKillsManager : MonoBehaviour
     public Animation killMarkerAnimation;
     public AudioSource killMarkerAudioSource;
 
-    public void GetHit(int _damage) // the old code had the player score added up based on the amount of _damage the selected gun did. So if the water gun takes 25 damage per hit, each hit would give 25 points to the players score.
+    // the old code had the player score added up based on the amount of _damage the selected gun did.
+    // So if the water gun takes 25 damage per hit, each hit would give 25 points to the players score.
+
+    public void GetHit(int _damage) 
     {
         hitMarkerAnimation.Stop();
         hitMarkerAnimation.Play();
@@ -19,8 +22,8 @@ public class PlayerHitAndKillsManager : MonoBehaviour
         hitMarkerAudioSource.Stop();
         hitMarkerAudioSource.Play();
         // add points for each hit on another player
-        PhotonNetwork.LocalPlayer.AddScore(2); // where there is a "2" here, there used to be "_damage" but i want it to be a single number for each hit and not the damage of weapon
-        
+        // where there is a "2" here, there used to be "_damage" but i want it to be a single number for each hit and not the damage of weapon
+        PhotonNetwork.LocalPlayer.AddScore(2); 
     }
     
     
