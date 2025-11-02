@@ -2,6 +2,8 @@ using System.Collections;
 using Photon.Pun;
 using UnityEngine;
 
+[NetworkMode(NetworkMode.PHOTON)]
+
 public class LauncherProjectile : MonoBehaviour
 {
     [HideInInspector] public GameObject player;

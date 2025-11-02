@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Photon.Pun;
 
+[NetworkMode(NetworkMode.PHOTON)]
 public class Grenade : MonoBehaviourPun
 {
     [Header("Weapon Stats")]

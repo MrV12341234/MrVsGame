@@ -121,7 +121,8 @@ GameObject:
   - component: {fileID: 6884482161376780305}
   - component: {fileID: 5624971602810078534}
   - component: {fileID: 6169899941316395053}
-  - component: {fileID: 3980005428586564144}
+  - component: {fileID: 3323750830566622385}
+  - component: {fileID: 6447203195079085224}
   m_Layer: 0
   m_Name: Launcher
   m_TagString: Untagged
@@ -214,7 +215,30 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 0.28921127, y: 0.3556138, z: 2.5154958}
   m_Center: {x: 0.6212673, y: -0.36639944, z: 1.4826152}
---- !u!114 &3980005428586564144
+--- !u!114 &3323750830566622385
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7521863905491336371}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f281287f56507ac46b0ed97c4385d337, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  fireRate: 5
+  grenadePrefab: {fileID: 7955651434695780599, guid: 46a6a4716b832cf4487ec7b0d856f1e2, type: 3}
+  muzzlePoint: {fileID: 0}
+  anim: {fileID: 0}
+  shootClip: {fileID: 0}
+  startClip: {fileID: 0}
+  grenadeSpawningDelay: 0.35
+  scopeManager: {fileID: 0}
+  startingGrenades: 10
+  ammoText: {fileID: 0}
+  ammoIndicator: {fileID: 0}
+--- !u!114 &6447203195079085224
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -234,7 +258,7 @@ MonoBehaviour:
   startClip: {fileID: 0}
   grenadeSpawningDelay: 0.35
   scopeManager: {fileID: 0}
-  startingGrenades: 10
+  startingGrenades: 3
   ammoText: {fileID: 0}
   ammoIndicator: {fileID: 0}
   photonPlayerSoundsManager: {fileID: 0}
