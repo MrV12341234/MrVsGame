@@ -1,16 +1,16 @@
 using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
-
 [NetworkMode(NetworkMode.LAN)]
-
 public class ThrownProjectileLAN : NetworkBehaviour
 {
     [Header("Projectile Settings")]
     public float randomRotationForce = 100f;
-    public float lifetime = 3f; // This is in seconds - set in inspector
-    public float throwForce = 50f;
-
+    public float lifetime = 3f;
+    
+    // Network variable for synchronized force
+    private NetworkVariable<float> networkThrowForce = new NetworkVariable<float>();
+    
     [Header("Explosion Settings")]
     public NetworkObject explosionPrefab;
     public int damage = 100;
@@ -20,26 +20,51 @@ public class ThrownProjectileLAN : NetworkBehaviour
     private bool hasExploded = false;
     private ulong ownerClientId;
     private GameObject ownerPlayer;
+    private bool forceApplied = false;
 
-    void Start()
+    public override void OnNetworkSpawn()
     {
+        // Only apply force on clients when the NetworkVariable updates
+        networkThrowForce.OnValueChanged += OnThrowForceChanged;
+        
         rb = GetComponent<Rigidbody>();
         
-        // DEBUG: Log the force being applied
-        Debug.Log($"Applying throw force: {throwForce} to grenade, Lifetime: {lifetime} seconds");
+        // If we're the server and have the force value, apply it immediately
+        if (IsServer && networkThrowForce.Value > 0)
+        {
+            ApplyForce(networkThrowForce.Value);
+        }
+        
+        // Start lifetime countdown on all instances
+        StartCoroutine(SelfDestructAfterDelay());
+    }
+
+    private void OnThrowForceChanged(float oldValue, float newValue)
+    {
+        // Clients apply force when they receive the synchronized value
+        if (!IsServer && newValue > 0 && rb != null)
+        {
+            ApplyForce(newValue);
+        }
+    }
+
+    private void ApplyForce(float force)
+    {
+        if (forceApplied) return;
+        forceApplied = true;
+        
+        Debug.Log($"Applying throw force: {force} to grenade, Lifetime: {lifetime} seconds");
         
         // Apply force in the forward direction
-        rb.AddForce(transform.forward * throwForce, ForceMode.Impulse);
+        rb.AddForce(transform.forward * force, ForceMode.Impulse);
         
-        // Add random rotation
+        // Add random rotation (use the same seed for consistency)
+        Random.InitState((int)(force * 1000)); // Seed based on force for consistency
         rb.AddTorque(new Vector3(
             Random.Range(-randomRotationForce, randomRotationForce),
             Random.Range(-randomRotationForce, randomRotationForce), 
             Random.Range(-randomRotationForce, randomRotationForce)
         ));
-
-        // Schedule self-destruction with the inspector lifetime
-        StartCoroutine(SelfDestructAfterDelay());
     }
 
     public void SetOwner(ulong clientId, GameObject player)
@@ -50,21 +75,20 @@ public class ThrownProjectileLAN : NetworkBehaviour
 
     public void SetThrowForce(float force)
     {
-        throwForce = force;
+        if (IsServer)
+        {
+            networkThrowForce.Value = force;
+            ApplyForce(force);
+        }
     }
-
-    // REMOVED: SetLifetime method - we use the inspector value now
 
     void OnCollisionEnter(Collision collision)
     {
-        // REMOVED: Explosion on collision
         // Grenade should bounce, not explode on contact
-       // Debug.Log("Grenade bounced off: " + collision.gameObject.name);
     }
 
     IEnumerator SelfDestructAfterDelay()
     {
-        // Debug.Log($"Grenade will explode in {lifetime} seconds");
         yield return new WaitForSeconds(lifetime);
 
         if (!hasExploded && IsServer)
@@ -78,11 +102,10 @@ public class ThrownProjectileLAN : NetworkBehaviour
         if (hasExploded) return;
         hasExploded = true;
 
-        // Debug.Log("Grenade exploding!");
-
-        // Spawn explosion effect on all clients
+        // Spawn explosion effect on all clients at the CURRENT position
         if (IsServer)
         {
+            // Use the current transform position which should be synchronized
             SpawnExplosionClientRpc(transform.position);
             ApplyDamage();
             GetComponent<NetworkObject>().Despawn(true);
@@ -92,7 +115,7 @@ public class ThrownProjectileLAN : NetworkBehaviour
     [ClientRpc]
     private void SpawnExplosionClientRpc(Vector3 position)
     {
-        // Instantiate explosion locally on all clients
+        // Instantiate explosion locally on all clients at the server-provided position
         Instantiate(explosionPrefab, position, Quaternion.identity);
     }
 
