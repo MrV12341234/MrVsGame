@@ -134,6 +134,12 @@ public class ThrownProjectileLAN : NetworkBehaviour
                 {
                     // Apply damage to the player
                     targetHealth.TakeDamageServerRpc(damage, ownerClientId);
+                    
+                    // Award hit points on server
+                    if (LeaderboardManagerLAN.Instance != null)
+                    {
+                        LeaderboardManagerLAN.Instance.Server_AwardHit(ownerClientId);
+                    }
 
                     // Notify hit/kill manager
                     if (ownerPlayer != null)
@@ -141,7 +147,7 @@ public class ThrownProjectileLAN : NetworkBehaviour
                         PlayerHitAndKillsManagerLAN hitManager = ownerPlayer.GetComponent<PlayerHitAndKillsManagerLAN>();
                         if (hitManager != null)
                         {
-                            NotifyHitClientRpc(ownerClientId, damage);
+                            NotifyHitClientRpc(ownerClientId);
                         }
                     }
                 }
@@ -150,16 +156,17 @@ public class ThrownProjectileLAN : NetworkBehaviour
     }
 
     [ClientRpc]
-    private void NotifyHitClientRpc(ulong attackerClientId, int damageAmount)
+    private void NotifyHitClientRpc(ulong attackerClientId)
     {
         // Only the attacker should see the hit marker
+        if (NetworkManager.Singleton == null) return;
+
         if (NetworkManager.Singleton.LocalClientId == attackerClientId)
         {
-            PlayerHitAndKillsManagerLAN hitManager = GetComponent<PlayerHitAndKillsManagerLAN>();
-            if (hitManager != null)
-            {
-                hitManager.GetHit(damageAmount);
-            }
+            var localPlayer = NetworkManager.Singleton.LocalClient?.PlayerObject;
+            var hitMgr = localPlayer ? localPlayer.GetComponent<PlayerHitAndKillsManagerLAN>() : null;
+            if (hitMgr != null)
+                hitMgr.GetHit(0);
         }
     }
 }

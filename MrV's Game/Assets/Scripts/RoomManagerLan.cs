@@ -111,6 +111,14 @@ public class RoomManagerLan : NetworkBehaviour
         {
             Debug.Log("[LAN] RoomManagerLan.OnNetworkSpawn for local player.");
         }
+        
+        // on clients (non-server), send the chosen name right away so the server uses it pre-spawn
+        if (IsClient && !IsServer)
+        {
+            var earlyName = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+            SubmitNameServerRpc(earlyName);
+        }
+        
     }
 
     public void ChangeName(string _name)
@@ -130,7 +138,6 @@ public class RoomManagerLan : NetworkBehaviour
     public void StorePlayerName(ulong clientId, string name)
     {
         if (!IsServer) return;
-        
         playerNames[clientId] = name;
         Debug.Log($"[RoomManagerLan] Stored name '{name}' for client {clientId}");
     }
@@ -413,8 +420,20 @@ public class RoomManagerLan : NetworkBehaviour
         Debug.Log($"[RoomManagerLan] Initial quiz passed by {clientId}. Spawning now...");
         SpawnPlayerFor(clientId, playerName);
     }
+    
+    // send clients name before spawn (this way clients name appears in leaderboard before they answer the first 3 questions required for spawn.
+    [ServerRpc(RequireOwnership = false)]
+    private void SubmitNameServerRpc(string chosenName, ServerRpcParams rpcParams = default)
+    {
+        var clientId = rpcParams.Receive.SenderClientId;
+        if (string.IsNullOrWhiteSpace(chosenName))
+            chosenName = $"Player_{clientId}";
+        if (chosenName.Length > 12)
+            chosenName = chosenName.Substring(0, 12);
 
-
+        StorePlayerName(clientId, chosenName); // updates the server cache used by ResolveName()
+        Debug.Log($"[RoomManagerLan] (Server) Received early name '{chosenName}' from {clientId}");
+    }
 
     private void OnClientDisconnected(ulong clientId)
     {

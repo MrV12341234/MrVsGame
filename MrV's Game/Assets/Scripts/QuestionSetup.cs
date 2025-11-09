@@ -129,7 +129,7 @@ public class QuestionSetup : MonoBehaviour
     // Helper method to get the correct answer text from the current question
     public string GetCorrectAnswerText()
     {
-// Since your QuestionData states that the correct answer is always the first in the original array,
+// The QuestionData states that the correct answer is always the first in the original array,
 // you can use that. Alternatively, you could retrieve the answer from the answerButton which was flagged correct.
         return currentQuestion.answers[0];
     }

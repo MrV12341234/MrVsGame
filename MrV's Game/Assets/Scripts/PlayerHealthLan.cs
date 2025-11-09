@@ -33,7 +33,7 @@ public class PlayerHealthLan : NetworkBehaviour
     {
         if (!IsOwner) return;
 
-        // Fall off map damage
+        // Fall off map damage. (treat as environment/self; no points)
         if (transform.position.y < -70)
         {
             // kill player for falling and pass our own id to killfeed as attacker for attribution
@@ -67,29 +67,76 @@ public class PlayerHealthLan : NetworkBehaviour
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - amount);
 
+// ADD: award +2 (pointsPerHit) to valid attacker when victim is still alive
+        bool validAttacker =
+            attackerClientId != ulong.MaxValue &&                  // not environment
+            attackerClientId != OwnerClientId &&                   // not self-hit
+            NetworkManager.Singleton.ConnectedClients.ContainsKey(attackerClientId);
+
+        if (validAttacker && currentHealth.Value > 0)
+        {
+            // Server-side score for a hit (+2 by default – set in LeaderboardManagerLAN)
+            LeaderboardManagerLAN.Instance?.Server_AwardHit(attackerClientId);
+
+            // ping attacker with hitmarker locally
+            NotifyHitClientRpc(attackerClientId, amount);  // NEW call
+        }
+
         if (currentHealth.Value <= 0)
         {
             // ---- KILLFEED (server) ----
             string victimName = ResolveNameForClient(OwnerClientId);
             string killerName = ResolveNameForClient(_lastAttackerClientId);
 
-            // If you prefer to skip environmental/self kills:
-            // if (_lastAttackerClientId == ulong.MaxValue || _lastAttackerClientId == OwnerClientId) { /* skip or set "Environment" */ }
+            if (LeaderboardManagerLAN.Instance != null)
+            {
+                // increment victim death
+                LeaderboardManagerLAN.Instance.Server_RegisterDeath(OwnerClientId);
+
+                // only award kill if attacker is valid and not environment/self (tweak to your liking)
+                if (_lastAttackerClientId != ulong.MaxValue && _lastAttackerClientId != OwnerClientId)
+                {
+                    LeaderboardManagerLAN.Instance.Server_AwardKill(_lastAttackerClientId);
+                }
+            }
 
             if (KillfeedManagerLAN.Instance != null)
             {
                 KillfeedManagerLAN.Instance.ReportKill(killerName, victimName);
             }
+
+            // Tell the killer client to play kill FX locally
+            NotifyKillerClientRpc(_lastAttackerClientId, victimName);
+
             SubmitDeathClientRpc();
         }
     }
+    
+    // attacker-only hitmarker ping
+    [ClientRpc]
+    private void NotifyHitClientRpc(ulong attackerClientId, int amount)
+    {
+        if (NetworkManager.Singleton == null) return;
+        if (NetworkManager.Singleton.LocalClientId != attackerClientId) return;
 
+        var localPlayer = NetworkManager.Singleton.LocalClient?.PlayerObject;
+        if (localPlayer == null) return;
+
+        var hk = localPlayer.GetComponent<PlayerHitAndKillsManagerLAN>();
+        if (hk != null)
+        {
+            hk.GetHit(amount); // plays the hit UI/SFX locally for the shooter
+        }
+    }
+
+    // death hitmaker ping
     [ClientRpc]
     private void SubmitDeathClientRpc()
     {
         if (IsOwner)
         {
-            LocalPlayerKDManager.Instance?.OnDied();
+            //LAN version (not Photon)
+            LocalPlayerKDManagerLAN.Instance?.OnDied();
 
             if (RoomManagerLan.Instance != null)
             {
@@ -126,4 +173,17 @@ public class PlayerHealthLan : NetworkBehaviour
         return $"Player_{clientId}";
     }
     
+    [ClientRpc]
+    private void NotifyKillerClientRpc(ulong killerClientId, string victimName)
+    {
+        if (NetworkManager.Singleton == null) return;
+
+        if (NetworkManager.Singleton.LocalClientId == killerClientId)
+        {
+            var localPlayer = NetworkManager.Singleton.LocalClient?.PlayerObject;
+            var hk = localPlayer ? localPlayer.GetComponent<PlayerHitAndKillsManagerLAN>() : null;
+            if (hk != null)
+                hk.GetKill(victimName);
+        }
+    }
 }

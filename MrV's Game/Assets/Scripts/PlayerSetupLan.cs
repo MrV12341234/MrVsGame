@@ -98,6 +98,10 @@ public class PlayerSetupLan : NetworkBehaviour
     {
         var finalName = string.IsNullOrWhiteSpace(s) ? "Player" : s;
         playerName.Value = new FixedString32Bytes(finalName);
+        
+        // also update server-side cache so respawns & any server logic see the correct name
+        RoomManagerLan.Instance?.StorePlayerName(OwnerClientId, finalName);
+        
         Debug.Log($"[LAN][Server] ServerSetName for OwnerClientId={OwnerClientId} -> '{finalName}'");
     }
 

@@ -14,16 +14,13 @@ public class PlayerHitAndKillsManagerLAN : NetworkBehaviour
     public void GetHit(int _damage) 
     {
         if (!IsOwner) return;
-        
-        hitMarkerAnimation.Stop();
-        hitMarkerAnimation.Play();
-        
-        hitMarkerAudioSource.Stop();
-        hitMarkerAudioSource.Play();
-        
-        // TODO: Implement scoring system for LAN
-        // Currently commented out as scoring isn't set up yet
-        // NetworkScoringManagerLAN.Instance?.AddScore(OwnerClientId, 2);
+
+        if (hitMarkerAnimation) { hitMarkerAnimation.Stop(); hitMarkerAnimation.Play(); }
+        if (hitMarkerAudioSource) { hitMarkerAudioSource.Stop(); hitMarkerAudioSource.Play(); }
+
+        // Scoring is awarded server-side by the weapon/damage code (grenade/bullets).
+        // If you have any client-only hit sources, you can uncomment this:
+        // LeaderboardManagerLAN.Instance?.ReportHitServerRpc(OwnerClientId);
     }
     
     public void GetKill(string _victimName)
@@ -36,10 +33,9 @@ public class PlayerHitAndKillsManagerLAN : NetworkBehaviour
         killMarkerAudioSource.Stop();
         killMarkerAudioSource.Play();
         
-        // TODO: Implement scoring system for LAN
-        // NetworkScoringManagerLAN.Instance?.AddScore(OwnerClientId, 5);
-        
+        // Awarded on the server when the victim actually dies. This local call is just FX.
         LocalPlayerKDManagerLAN.Instance?.GetKill();
+
         
         // Report kill to killfeed
         if (KillfeedManagerLAN.Instance != null)
@@ -51,8 +47,9 @@ public class PlayerHitAndKillsManagerLAN : NetworkBehaviour
     
     private string GetPlayerName(ulong clientId)
     {
-        // You might want to implement a proper player name resolution
-        // This is a placeholder - you'll need to replace with your actual player name system
+        if (RoomManagerLan.Instance != null)
+            return RoomManagerLan.Instance.GetStoredPlayerName(clientId);
+
         return $"Player_{clientId}";
     }
 }

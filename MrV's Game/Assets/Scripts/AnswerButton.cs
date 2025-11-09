@@ -3,6 +3,7 @@ using UnityEngine;
 using TMPro;
 using Photon.Pun;
 using Photon.Pun.UtilityScripts;
+using Unity.Netcode;
 
 public class AnswerButton : MonoBehaviour
 {
@@ -47,7 +48,9 @@ public class AnswerButton : MonoBehaviour
         {
             Debug.Log("Correct Answer [PHOTON]");
             RoomManager.Instance.getCorrectAnswer();
+            // Update leaderboard score if game on photon server
             PhotonNetwork.LocalPlayer.AddScore(100);
+            
 
             if (questionSetup.questions.Count > 0)
             {
@@ -59,7 +62,10 @@ public class AnswerButton : MonoBehaviour
             isInDelay = true;
             Debug.Log("Wrong Answer [PHOTON]");
             RoomManager.Instance.getWrongAnswer();
+            // Update leaderboard score if game on photon server
             PhotonNetwork.LocalPlayer.AddScore(-100);
+            
+            
 
             string correctAnswer = questionSetup.GetCorrectAnswerText();
             if (questionSetup.feedbackText != null)
@@ -73,14 +79,16 @@ public class AnswerButton : MonoBehaviour
         if (isCorrect)
         {
             RoomManagerLan.Instance.getCorrectAnswer();
-            PlayerPrefs.SetInt("LAN_Score", PlayerPrefs.GetInt("LAN_Score", 0) + 100);
+            //update leaderboard score if LAN game. This point / score is updated in LeaderboardManagerLAN (or in the inspector inside each map)
+            LeaderboardManagerLAN.Instance?.ReportCorrectAnswerServerRpc(NetworkManager.Singleton.LocalClientId);
         }
         else
         {
             isInDelay = true;
             
             RoomManagerLan.Instance.getWrongAnswer();
-            PlayerPrefs.SetInt("LAN_Score", PlayerPrefs.GetInt("LAN_Score", 0) - 100);
+            //update leaderboard score if LAN game
+            LeaderboardManagerLAN.Instance?.ReportWrongAnswerServerRpc(NetworkManager.Singleton.LocalClientId);
 
             string correctAnswer = questionSetup.GetCorrectAnswerText();
             if (questionSetup.feedbackText != null)
