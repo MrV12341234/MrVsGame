@@ -51,8 +51,8 @@ public class PlayerSetupLan : NetworkBehaviour
 
         if (isLocal)
         {
-            // local cosmetics still owner-writable
-            byte savedHat = (byte)PlayerPrefs.GetInt("hatSelected", 0);
+            // local cosmetics still owner-writable. Load saved hat choice and publish to the network
+            byte savedHat = (byte)PlayerPrefs.GetInt("hatSelected", 0); // use -1 in prefs if you support "no hat"
             hatIndex.Value = savedHat;
 
             // Send our chosen name to the server once per spawn (server writes NV)
@@ -65,10 +65,10 @@ public class PlayerSetupLan : NetworkBehaviour
         }
 
         // Apply current visuals and subscribe to changes
-        UpdateHatVisual(hatIndex.Value);
+        ApplyHatVisualAndOwnerHide(hatIndex.Value);               // <<< important: apply once on spawn
         if (nameText) nameText.text = playerName.Value.ToString();
 
-        hatIndex.OnValueChanged += (_, newValue) => UpdateHatVisual(newValue);
+        hatIndex.OnValueChanged += OnHatIndexChanged;
         playerName.OnValueChanged += (_, newName) =>
         {
             if (nameText) nameText.text = newName.ToString();
@@ -76,14 +76,78 @@ public class PlayerSetupLan : NetworkBehaviour
 
         Debug.Log("[LAN] Player has spawned! IsOwner: " + IsOwner);
     }
+    
+    private void OnHatIndexChanged(byte _, byte newValue)
+    {
+        ApplyHatVisualAndOwnerHide(newValue);
+    }
+
+    /// <summary>
+    /// Enables only the selected hat for everyone.
+    /// If this is the owner, also hides rendering locally so FP camera doesn't see it.
+    /// </summary>
+    private void ApplyHatVisualAndOwnerHide(byte index)
+    {
+        UpdateHatVisual(index);
+
+        // Hide the active hat from the local owner's FP view (others still see it)
+        if (IsOwner)
+            HideActiveHatLocally();
+    }
 
     private void UpdateHatVisual(byte index)
     {
+        if (hatParent == null) return;
+
         for (int i = 0; i < hatParent.childCount; i++)
         {
-            hatParent.GetChild(i).gameObject.SetActive(i == index);
+            // If you support "no hat" with index 255 or -1, change this condition accordingly
+            bool enable = (i == index);
+            hatParent.GetChild(i).gameObject.SetActive(enable);
         }
     }
+    
+    /// <summary>
+    /// Locally hides the currently active hat (renderers off, colliders optional off) for the owner only.
+    /// This is not networked; others still render your hat.
+    /// </summary>
+    private void HideActiveHatLocally()
+    {
+        if (hatParent == null) return;
+
+        Transform activeHat = null;
+        for (int i = 0; i < hatParent.childCount; i++)
+        {
+            var child = hatParent.GetChild(i);
+            if (child.gameObject.activeInHierarchy)
+            {
+                activeHat = child;
+                break;
+            }
+        }
+        if (activeHat == null) return;
+
+        // Safest local-only hide: forceRenderingOff (keeps state consistent but invisible locally)
+        var renderers = activeHat.GetComponentsInChildren<Renderer>(true);
+        foreach (var r in renderers)
+            r.forceRenderingOff = true;
+
+        // Optional: avoid raycast / interaction issues if hats have colliders
+        var colliders = activeHat.GetComponentsInChildren<Collider>(true);
+        foreach (var c in colliders)
+            c.enabled = false;
+
+        // --- Alternative (layer culling):
+        // If you prefer layers, put the activeHat on a "HiddenFromFPCam" layer for the owner only
+        // and ensure the FP camera culls that layer in its Culling Mask.
+        // int hiddenLayer = LayerMask.NameToLayer("HiddenFromFPCam");
+        // if (hiddenLayer >= 0)
+        // {
+        //     foreach (var t in activeHat.GetComponentsInChildren<Transform>(true))
+        //         t.gameObject.layer = hiddenLayer;
+        // }
+    }
+
 
     private System.Collections.IEnumerator LockCursorDelayed()
     {

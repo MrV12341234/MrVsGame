@@ -16,12 +16,14 @@ public class LanRoomHostUI : MonoBehaviour
     private List<string> mapSceneNames = new List<string>
     {
         "Cartoon City",
+        "Paper City",
         "Sky Arena",
         "Desert Storm",
         "Industry Baby",
         "Dust 2",
         "Mirage",
-        "Rainbow Road"
+        "Rainbow Road",
+        "RDF"
     };
 
     private void Start()

@@ -39,9 +39,6 @@ public class QuestionSetup : MonoBehaviour
             sInitialized = true;
         }
     }
-
-    
-    
     public void InitializeNewQuestion()
     {
         // Clear any previous feedback

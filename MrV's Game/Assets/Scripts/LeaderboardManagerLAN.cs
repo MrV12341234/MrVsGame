@@ -18,7 +18,7 @@ public class LeaderboardManagerLAN : NetworkBehaviour
     public Transform playerItemPrefabParent;
     public GameObject playerItemPrefab;
 
-    [Header("Scoring (Inspector-tunable)")]
+    [Header("Scoring")]
     [Tooltip("Points awarded to the attacker per successful hit")]
     public int pointsPerHit = 2;
     [Tooltip("Points awarded to the attacker per kill")]

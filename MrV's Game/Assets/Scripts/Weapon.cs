@@ -12,7 +12,7 @@ public class Weapon : MonoBehaviour
     public int damagePerShot = 25;
     public float hitscanDistance = 500f;
     [Space] public float spread = 0.05f;
-    public int pelletsCount = 1;
+    public int pelletsCount = 1; // how many bullets (pellets) leave the gun on each shot
 
     [Header("Animation Set Up")]
     public Animation anim;

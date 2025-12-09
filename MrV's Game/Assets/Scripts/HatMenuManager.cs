@@ -8,6 +8,7 @@ public class HatMenuManager : MonoBehaviour
     public GameObject equipButton;
 
     private int hatSelected;
+    
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {

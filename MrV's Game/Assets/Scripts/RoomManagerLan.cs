@@ -27,6 +27,12 @@ public class RoomManagerLan : NetworkBehaviour
     public GameObject wrongAnswer;
     public bool showQuiz;
     [SerializeField] private bool requireQuizBeforeFirstSpawn = true;
+    
+    [Header("Disconnect UI")]
+    public GameObject hostLeftPanel;            // Optional: assign a panel/canvas for host-left message
+    public TextMeshProUGUI hostLeftText;        // Optional: the text element on that panel
+
+    private bool _handledHostLeft = false;      // guard to avoid double handling
 
     // Legacy public counter (UI only)
     [HideInInspector] public int correctAnswerCounter = 0;
@@ -438,10 +444,72 @@ public class RoomManagerLan : NetworkBehaviour
     private void OnClientDisconnected(ulong clientId)
     {
         Debug.Log($"[RoomManagerLan] OnClientDisconnected {clientId}");
-        // Remove from name dictionary when player disconnects
+
+        // Server bookkeeping. // Remove from name dictionary when player disconnects
         if (IsServer && playerNames.ContainsKey(clientId))
         {
             playerNames.Remove(clientId);
         }
+
+        // --- Client-side host-left handling ---
+        // If we are a CLIENT (not the server/host) and "we" are the one that just got disconnected,
+        // it usually means the host shut down or we lost connection to host.
+        if (!IsServer && clientId == NetworkManager.Singleton.LocalClientId && !_handledHostLeft)
+        {
+            _handledHostLeft = true;
+            StartCoroutine(HandleHostLeftAndReturnToMenu());
+        }
+    }
+    
+    private IEnumerator HandleHostLeftAndReturnToMenu()
+    {
+        // Show message. This overrides what is typed in the inspector
+        ShowHostLeftOverlay("Host left. Disconnecting...");
+
+        // Make sure the cursor is available so players see the message.
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
+        yield return new WaitForSecondsRealtime(3f);
+
+        // Prefer to reuse your PauseMenuManager cleanup path
+        var pause = FindObjectOfType<PauseMenuManager>();
+        if (pause != null)
+        {
+            pause.LeaveGame();
+            yield break;
+        }
+
+        // Fallback: do a simple shutdown + scene load if PauseMenuManager isn't found.
+        if (NetworkManager.Singleton && NetworkManager.Singleton.IsListening)
+        {
+            NetworkManager.Singleton.Shutdown();
+            Debug.Log("[LAN] Client shutdown after host left.");
+        }
+
+        // If you want to reset stats here, you can, or just go straight to menu:
+        UnityEngine.SceneManagement.SceneManager.LoadScene(0);
+    }
+
+    private void ShowHostLeftOverlay(string msg)
+    {
+        // Preferred: explicit host-left UI panel + text if you wired them.
+        if (hostLeftPanel != null)
+        {
+            hostLeftPanel.SetActive(true);
+            if (hostLeftText != null) hostLeftText.text = msg;
+            return;
+        }
+
+        // Backup: reuse your existing warningText if present.
+        if (warningText != null)
+        {
+            warningText.gameObject.SetActive(true);
+            warningText.text = msg;
+            return;
+        }
+
+        // Last resort: log it.
+        Debug.LogWarning($"[LAN] {msg}");
     }
 }
