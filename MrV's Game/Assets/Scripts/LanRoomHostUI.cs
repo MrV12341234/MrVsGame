@@ -12,13 +12,13 @@ public class LanRoomHostUI : MonoBehaviour
     public TMP_Text warningText;
     public TMP_Dropdown mapDropdown;
 
-    // must match scene name exactly (name in build profiles). This is the dropdown map names in the menu
+    // below map name must match scene name exactly (name in build profiles). This is the dropdown map names in the menu
     private List<string> mapSceneNames = new List<string>
     {
         "Cartoon City",
         "Paper City",
+        "Disaster Town",
         "Sky Arena",
-        "Desert Storm",
         "Industry Baby",
         "Dust 2",
         "Mirage",

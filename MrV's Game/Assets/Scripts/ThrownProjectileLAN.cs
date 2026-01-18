@@ -6,7 +6,7 @@ public class ThrownProjectileLAN : NetworkBehaviour
 {
     [Header("Projectile Settings")]
     public float randomRotationForce = 100f;
-    public float lifetime = 3f;
+    public float lifetime = 4f;
     
     // Network variable for synchronized force
     private NetworkVariable<float> networkThrowForce = new NetworkVariable<float>();

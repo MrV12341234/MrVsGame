@@ -11,7 +11,7 @@ public class PlayerHitAndKillsManagerLAN : NetworkBehaviour
     public Animation killMarkerAnimation;
     public AudioSource killMarkerAudioSource;
 
-    public void GetHit(int _damage) 
+    public void GetHit(int _damage)
     {
         if (!IsOwner) return;
 
@@ -35,14 +35,6 @@ public class PlayerHitAndKillsManagerLAN : NetworkBehaviour
         
         // Awarded on the server when the victim actually dies. This local call is just FX.
         LocalPlayerKDManagerLAN.Instance?.GetKill();
-
-        
-        // Report kill to killfeed
-        if (KillfeedManagerLAN.Instance != null)
-        {
-            string killerName = GetPlayerName(OwnerClientId);
-            KillfeedManagerLAN.Instance.ReportKill(killerName, _victimName);
-        }
     }
     
     private string GetPlayerName(ulong clientId)

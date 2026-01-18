@@ -58,7 +58,6 @@ public class RoomManagerLan : NetworkBehaviour
     {
         if (GameMode.IsLAN && !NetworkManager.Singleton.IsHost)
         {
-            Debug.Log("[LAN] Showing name entry UI for client.");
             if (nameEntryUI) nameEntryUI.SetActive(true);
             Cursor.visible = true;
             Cursor.lockState = CursorLockMode.None;
@@ -158,6 +157,18 @@ public class RoomManagerLan : NetworkBehaviour
             return playerNames[clientId];
         }
         return $"Player_{clientId}";
+    }
+    
+    /// <summary>
+    /// Global helper: resolve a clientId to the stored gamertag,
+    /// or "Player_{id}" if we have nothing.
+    /// </summary>
+    public static string ResolvePlayerName(ulong clientId)
+    {
+        if (Instance == null)
+            return $"Player_{clientId}";
+
+        return Instance.GetStoredPlayerName(clientId);
     }
 
     /// <summary>

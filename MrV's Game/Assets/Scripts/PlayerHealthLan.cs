@@ -2,6 +2,7 @@ using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 
 [NetworkMode(NetworkMode.LAN)]
 public class PlayerHealthLan : NetworkBehaviour
@@ -12,6 +13,13 @@ public class PlayerHealthLan : NetworkBehaviour
     [Header("UI Set Up")]
     public TextMeshProUGUI healthText;
     public Image healthFillImage;
+    
+    [Header("Damage Flash UI (Local Only)")]
+    [SerializeField] private Image damageFlashImage;   // assign Red hit Damage Flash Image here
+    [SerializeField] private float damageFlashDuration = 0.25f;
+    [SerializeField, Range(0f, 1f)] private float damageFlashAlpha = 0.6f;
+    
+    private Coroutine _damageFlashRoutine;
     
     private ulong _lastAttackerClientId = ulong.MaxValue;
 
@@ -26,7 +34,32 @@ public class PlayerHealthLan : NetworkBehaviour
         {
             SetInitialHealthServerRpc(maxHealth);
         }
-        currentHealth.OnValueChanged += (oldVal, newVal) => UpdateUI(newVal);
+        
+        // IMPORTANT: hook once
+        currentHealth.OnValueChanged += OnHealthChanged;
+
+        // Ensure flash starts hidden
+        if (damageFlashImage != null)
+            SetDamageFlashVisible(false);
+    }
+    
+    private void OnDestroy()
+    {
+        currentHealth.OnValueChanged -= OnHealthChanged;
+    }
+    
+    private void OnHealthChanged(int oldVal, int newVal)
+    {
+        UpdateUI(newVal);
+
+        // Only the owning client should see the red flash
+        if (!IsOwner) return;
+
+        // Only flash on damage (health decreased)
+        if (newVal < oldVal) // remove newVal > 0 if you also want flash on death shot
+        {
+            TriggerDamageFlash();
+        }
     }
 
     private void Update()
@@ -48,6 +81,33 @@ public class PlayerHealthLan : NetworkBehaviour
 
         if (healthFillImage != null)
             healthFillImage.fillAmount = (float)newHealth / maxHealth;
+    }
+    
+    private void TriggerDamageFlash()
+    {
+        if (damageFlashImage == null) return;
+
+        if (_damageFlashRoutine != null)
+            StopCoroutine(_damageFlashRoutine);
+
+        _damageFlashRoutine = StartCoroutine(DamageFlashRoutine());
+    }
+    
+    private IEnumerator DamageFlashRoutine()
+    {
+        SetDamageFlashVisible(true);
+        yield return new WaitForSecondsRealtime(damageFlashDuration);
+        SetDamageFlashVisible(false);
+        _damageFlashRoutine = null;
+    }
+
+    private void SetDamageFlashVisible(bool visible)
+    {
+        if (damageFlashImage == null) return;
+
+        var c = damageFlashImage.color;
+        c.a = visible ? damageFlashAlpha : 0f;
+        damageFlashImage.color = c;
     }
 
     [ServerRpc]
@@ -160,17 +220,12 @@ public class PlayerHealthLan : NetworkBehaviour
     
     private string ResolveNameForClient(ulong clientId)
     {
-        // Environment / unknown
-        if (clientId == ulong.MaxValue) return "Environment";
+        // Environment / map / unknown damage source
+        if (clientId == ulong.MaxValue)
+            return "Environment";
 
-        if (NetworkManager.Singleton != null &&
-            NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var nc) &&
-            nc.PlayerObject != null)
-        {
-            var ps = nc.PlayerObject.GetComponent<PlayerSetupLan>();
-            if (ps != null) return ps.GetPlayerNameString();
-        }
-        return $"Player_{clientId}";
+        // Use RoomManager's dictionary so we don't depend on PlayerObject being alive
+        return RoomManagerLan.ResolvePlayerName(clientId);
     }
     
     [ClientRpc]
