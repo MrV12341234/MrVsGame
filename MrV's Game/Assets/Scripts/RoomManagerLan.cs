@@ -1,10 +1,12 @@
 using Unity.Netcode;
 using UnityEngine;
 using TMPro;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.SceneManagement;
+using Unity.Collections;
 
 [NetworkMode(NetworkMode.LAN)]
 public class RoomManagerLan : NetworkBehaviour
@@ -15,6 +17,13 @@ public class RoomManagerLan : NetworkBehaviour
     public string roomCode = "Map1";
     public string roomNameToJoin = "test";
     private string currentName = "Chocolate";
+    public enum LanGameMode { FFA = 0, Teams = 1 }
+    
+    [Header("Game Mode")]
+    public LanGameMode gameMode = LanGameMode.FFA;
+    public bool IsTeamsMode => gameMode == LanGameMode.Teams;
+    [Header("Teams Lobby UI")]
+    public TeamLobbyUI teamLobbyUI; // drag your TeamsLobbyCanvas (the object with TeamLobbyUI) here
 
     [Header("Player Setup")]
     public GameObject playerPrefab;
@@ -49,19 +58,88 @@ public class RoomManagerLan : NetworkBehaviour
     // Add a dictionary to track player names on the server
     private readonly Dictionary<ulong, string> playerNames = new Dictionary<ulong, string>();
 
+    
+    [Header("Teams Mode")]
+    [SerializeField] private bool enableTeamsLobby = true;
+
+// Server decides when match starts
+    private NetworkVariable<bool> matchStarted =
+        new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public bool IsMatchStarted => matchStarted.Value;
+    
+
+// Synced lobby list (everyone can read)
+    public NetworkList<LobbyPlayerState> LobbyPlayers { get; private set; }
+    
+    public enum TeamId : byte
+    {
+        Blue = 0,
+        Red = 1
+    }
+    
+    // This struct is synced to all clients in a NetworkList
+    public struct LobbyPlayerState : INetworkSerializable, IEquatable<LobbyPlayerState>
+    {
+        public ulong clientId;
+        public FixedString32Bytes name;
+        public TeamId team;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref clientId);
+            serializer.SerializeValue(ref name);
+
+            byte t = (byte)team;
+            serializer.SerializeValue(ref t);
+            if (serializer.IsReader) team = (TeamId)t;
+        }
+
+        // Required for NetworkList<T>
+        public bool Equals(LobbyPlayerState other)
+        {
+            return clientId == other.clientId &&
+                   name.Equals(other.name) &&
+                   team == other.team;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is LobbyPlayerState other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            // Simple stable hash
+            unchecked
+            {
+                int hash = clientId.GetHashCode();
+                hash = (hash * 397) ^ name.GetHashCode();
+                hash = (hash * 397) ^ team.GetHashCode();
+                return hash;
+            }
+        }
+    }
+
+
     private void Awake()
     {
         Instance = this;
+        LobbyPlayers = new NetworkList<LobbyPlayerState>();
     }
 
     private void Start()
     {
+        // Read gamemode chosen in menu (host) or from discovered room (client)
+        gameMode = (LanGameMode)PlayerPrefs.GetInt("LAN_GameMode", 0);
+        
         if (GameMode.IsLAN && !NetworkManager.Singleton.IsHost)
         {
             if (nameEntryUI) nameEntryUI.SetActive(true);
             Cursor.visible = true;
             Cursor.lockState = CursorLockMode.None;
         }
+        
+        Debug.Log("[RoomManagerLan] Game mode from prefs = " + gameMode);
     }
 
     public void OnJoinClicked()
@@ -83,7 +161,7 @@ public class RoomManagerLan : NetworkBehaviour
         currentName = name;
         
         if (nameEntryUI) nameEntryUI.SetActive(false);
-        if (connectingUI) connectingUI.SetActive(true);
+       // if (connectingUI) connectingUI.SetActive(true);
 
         bool isHost = PlayerPrefs.GetInt("LAN_IsHost", 0) == 1;
 
@@ -107,9 +185,22 @@ public class RoomManagerLan : NetworkBehaviour
         // Disable the menu/room camera on this peer
         if (roomCamera != null)
         {
-            roomCamera.SetActive(false);
-            var al = roomCamera.GetComponent<AudioListener>();
-            if (al) al.enabled = false;
+            // If we're in Teams mode and match hasn't started yet, KEEP this camera on.
+            bool isTeams = (gameMode == LanGameMode.Teams);
+
+            if (!isTeams)
+            {
+                roomCamera.SetActive(false);
+                var al = roomCamera.GetComponent<AudioListener>();
+                if (al) al.enabled = false;
+            }
+            else
+            {
+                // Teams lobby needs a camera until players spawn
+                roomCamera.SetActive(true);
+                var al = roomCamera.GetComponent<AudioListener>();
+                if (al) al.enabled = true;
+            }
         }
 
         if (IsOwner)
@@ -123,8 +214,29 @@ public class RoomManagerLan : NetworkBehaviour
             var earlyName = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
             SubmitNameServerRpc(earlyName);
         }
+        // handle late joiners: if match already started, kill room camera locally
+        matchStarted.OnValueChanged += OnMatchStartedChanged;
+        OnMatchStartedChanged(false, matchStarted.Value); // apply current value right now
         
     }
+    
+    private void OnMatchStartedChanged(bool oldValue, bool newValue)
+    {
+        if (!newValue) return;
+
+        // Hide lobby UI if it exists
+        if (teamLobbyUI != null)
+            teamLobbyUI.HideLobby();
+
+        // Disable the lobby/room camera locally so Camera.main becomes the player camera
+        if (roomCamera != null)
+        {
+            roomCamera.SetActive(false);
+            var al = roomCamera.GetComponent<AudioListener>();
+            if (al) al.enabled = false;
+        }
+    }
+
 
     public void ChangeName(string _name)
     {
@@ -178,7 +290,12 @@ public class RoomManagerLan : NetworkBehaviour
     public void ShowQuiz()
     {
         if (!showQuiz || !Quiz) return;
+        
+        if (teamLobbyUI != null)
+            teamLobbyUI.HideLobby();
 
+        
+        if (connectingUI != null) connectingUI.SetActive(false);
         Quiz.SetActive(true);
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
@@ -204,41 +321,68 @@ public class RoomManagerLan : NetworkBehaviour
         StartCoroutine(showCorrectAnswer());
 
         _localCorrectCount++;
-        correctAnswerCounter = _localCorrectCount; // keep UI value in sync if other code reads it
+        correctAnswerCounter = _localCorrectCount;
 
-        if (_localCorrectCount >= 3)
+        if (_localCorrectCount < 3)
         {
-            _localCorrectCount = 0;
-            HideQuizAndLockCursorLocal();
-
-            // Are we already spawned?
-            bool hasPlayerObject =
-                NetworkManager.Singleton.LocalClient != null &&
-                NetworkManager.Singleton.LocalClient.PlayerObject != null;
-
-            if (!hasPlayerObject && requireQuizBeforeFirstSpawn)
-            {
-                // This is the initial gate – spawn for the first time.
-                RequestInitialSpawn();
-            }
-            else
-            {
-                // This is a post-death quiz – do a regular respawn.
-                RequestRespawn();
-            }
-        }
-        else
-        {
-            // Load next question locally (unchanged)
+            // Next question
             var setup = Quiz ? Quiz.GetComponentInChildren<QuestionSetup>() : null;
             if (setup)
             {
                 if (setup.feedbackText) setup.feedbackText.text = "";
                 setup.InitializeNewQuestion();
             }
+            return;
         }
 
+        // ---- PASSED QUIZ ----
+        _localCorrectCount = 0;
+
+        // Force feedback off (prevents “Correct” getting stuck)
+        if (correctAnswer) correctAnswer.SetActive(false);
+        if (wrongAnswer) wrongAnswer.SetActive(false);
+        StopAllCoroutines(); // stops showCorrectAnswer/showWrongAnswer if they were mid-run
+
+        // Are we already spawned?
+        bool hasPlayerObject =
+            NetworkManager.Singleton.LocalClient != null &&
+            NetworkManager.Singleton.LocalClient.PlayerObject != null;
+
+        // FIRST SPAWN GATE
+        if (!hasPlayerObject && requireQuizBeforeFirstSpawn)
+        {
+            // Teams pre-game lobby
+            if (gameMode == LanGameMode.Teams)
+            {
+                if (!IsMatchStarted)
+                {
+                    HideQuizOnly();
+                    ShowTeamsLobbyLocal();
+
+                    string n = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+                    EnterLobbyServerRpc(n);
+                }
+                else
+                {
+                    // Match running: never show lobby again
+                    HideQuizAndLockCursorLocal();
+                    RequestRespawn();
+                }
+                return;
+            }
+
+            //  FFA: after first quiz, spawn for the first time
+            HideQuizAndLockCursorLocal();
+            RequestInitialSpawn();
+            return;
+        }
+
+        // POST-DEATH QUIZ (respawn)
+        HideQuizAndLockCursorLocal();
+        RequestRespawn();
     }
+
+
 
     /// <summary>
     /// LOCAL ONLY — button handler for "Wrong".
@@ -268,17 +412,184 @@ public class RoomManagerLan : NetworkBehaviour
             wrongAnswer.SetActive(false);
         }
     }
+    
+    private void ShowTeamsLobbyLocal()
+    {
+        if (teamLobbyUI != null)
+        {
+            if (connectingUI != null) connectingUI.SetActive(false);
+            teamLobbyUI.ShowLobby();
+
+            // Lobby needs mouse
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+        else
+        {
+            Debug.LogWarning("[TeamsLobby] teamLobbyUI reference is not set in inspector!");
+        }
+    }
 
     /// <summary>
     /// Local convenience to ensure UI is hidden and cursor relocked.
     /// Also safe to call from PlayerSetupLan.OnNetworkSpawn after respawn.
     /// </summary>
+    
     public void HideQuizAndLockCursorLocal()
     {
         if (Quiz && Quiz.activeSelf) Quiz.SetActive(false);
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
+    
+    // below used for teams mode so cursor is not locked after the first 3 answers.
+    public void HideQuizOnly()
+    {
+        if (Quiz && Quiz.activeSelf) Quiz.SetActive(false);
+    }
+
+    // below 3 methods for teams lobby
+    private int CountTeam(TeamId team)
+    {
+        int count = 0;
+        for (int i = 0; i < LobbyPlayers.Count; i++)
+            if (LobbyPlayers[i].team == team)
+                count++;
+        return count;
+    }
+
+    private TeamId GetTeamWithFewerPlayers()
+    {
+        int blue = CountTeam(TeamId.Blue);
+        int red = CountTeam(TeamId.Red);
+        return (blue <= red) ? TeamId.Blue : TeamId.Red;
+    }
+
+    private int FindLobbyIndex(ulong clientId)
+    {
+        for (int i = 0; i < LobbyPlayers.Count; i++)
+            if (LobbyPlayers[i].clientId == clientId)
+                return i;
+        return -1;
+    }
+    
+    [ServerRpc(RequireOwnership = false)]
+    private void EnterLobbyServerRpc(string playerName, ServerRpcParams rpcParams = default)
+    {
+        ulong clientId = rpcParams.Receive.SenderClientId;
+
+        // If match already started, we won't lobby — we spawn you immediately on the team with fewest players
+        if (matchStarted.Value)
+        {
+            // Late join: auto assign team and spawn immediately
+            TeamId t = GetTeamWithFewerPlayers();
+            SpawnPlayerFor_WithTeam(clientId, playerName, t);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(playerName))
+            playerName = $"Player_{clientId}";
+        if (playerName.Length > 12)
+            playerName = playerName.Substring(0, 12);
+
+        // Store name in your existing server cache too
+        StorePlayerName(clientId, playerName);
+
+        TeamId team = GetTeamWithFewerPlayers();
+
+        int idx = FindLobbyIndex(clientId);
+        LobbyPlayerState state = new LobbyPlayerState
+        {
+            clientId = clientId,
+            name = new FixedString32Bytes(playerName),
+            team = team
+        };
+
+        if (idx >= 0) LobbyPlayers[idx] = state;
+        else LobbyPlayers.Add(state);
+
+        Debug.Log($"[TeamsLobby][Server] {playerName} entered lobby on team {team}");
+    }
+    
+    [ServerRpc(RequireOwnership = false)]
+    public void SwitchTeamServerRpc(ServerRpcParams rpcParams = default)
+    {
+        ulong clientId = rpcParams.Receive.SenderClientId;
+        if (matchStarted.Value) return;
+
+        int idx = FindLobbyIndex(clientId);
+        if (idx < 0) return;
+
+        var s = LobbyPlayers[idx];
+        s.team = (s.team == TeamId.Blue) ? TeamId.Red : TeamId.Blue;
+        LobbyPlayers[idx] = s;
+
+        Debug.Log($"[TeamsLobby][Server] {s.name} switched to {s.team}");
+    }
+    [ServerRpc(RequireOwnership = false)]
+    public void StartMatchServerRpc(ServerRpcParams rpcParams = default)
+    {
+        // Only host/server can start
+        if (!IsServer) return;
+        if (matchStarted.Value) return;
+
+        matchStarted.Value = true;
+        Debug.Log("[TeamsLobby][Server] Match started!");
+
+        // Spawn everyone in the lobby
+        for (int i = 0; i < LobbyPlayers.Count; i++)
+        {
+            ulong id = LobbyPlayers[i].clientId;
+
+            // if they already have a player object, skip
+            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(id, out var nc) && nc.PlayerObject != null)
+                continue;
+
+            string pname = LobbyPlayers[i].name.ToString();
+            SpawnPlayerFor_WithTeam(id, pname, LobbyPlayers[i].team);
+        }
+
+        // Tell everyone to hide lobby UI
+        HideLobbyClientRpc();
+    }
+
+    [ClientRpc]
+    private void HideLobbyClientRpc()
+    {
+        // We'll have TeamLobbyUI listen for this too, but this is a simple “force hide”
+        var ui = FindObjectOfType<TeamLobbyUI>();
+        if (ui != null) ui.HideLobby();
+        
+        if (roomCamera != null)
+        {
+            roomCamera.SetActive(false);
+            var al = roomCamera.GetComponent<AudioListener>();
+            if (al) al.enabled = false;
+        }
+    }
+    
+    [ServerRpc(RequireOwnership = false)]
+    public void MoveSelectedPlayerServerRpc(ulong targetClientId, ServerRpcParams rpcParams = default)
+    {
+        // Only host/server should be allowed to do this
+        if (!IsServer) return;
+
+        // Optional extra protection: only allow the host client to request it
+        if (rpcParams.Receive.SenderClientId != NetworkManager.Singleton.LocalClientId)
+            return;
+
+        if (matchStarted.Value) return; // don't allow changes after start
+
+        int idx = FindLobbyIndex(targetClientId);
+        if (idx < 0) return;
+
+        var s = LobbyPlayers[idx];
+        s.team = (s.team == TeamId.Blue) ? TeamId.Red : TeamId.Blue;
+        LobbyPlayers[idx] = s;
+
+        Debug.Log($"[TeamsLobby][Server] Host moved {s.name} to {s.team}");
+    }
+
 
     private void SpawnPlayerFor(ulong clientId, string chosenName)
     {
@@ -295,27 +606,64 @@ public class RoomManagerLan : NetworkBehaviour
             return;
         }
 
+        // --- NEW: teams-aware spawn ---
+        if (IsTeamsMode)
+        {
+            // If we already know their team (lobby list), KEEP it (respawns/late join)
+            if (!TryGetTeamForClient(clientId, out var t))
+            {
+                // If unknown (late join first time), assign balanced team
+                t = GetTeamWithFewerPlayers();
+            }
+
+            SpawnPlayerFor_WithTeam(clientId, chosenName, t);
+            return;
+        }
+
+        // --- FFA spawn (unchanged) ---
         var spawnPos = GetRandomSpawnPos();
         var go = Instantiate(playerPrefab, spawnPos, Quaternion.identity);
-        
+
         var netObj = go.GetComponent<NetworkObject>();
-        netObj.SpawnAsPlayerObject(clientId);  
-        
-        // Store the name for future respawns
+        netObj.SpawnAsPlayerObject(clientId);
+
         StorePlayerName(clientId, chosenName);
+
+        var setup = go.GetComponent<PlayerSetupLan>();
+        if (setup != null)
+            setup.ServerSetName(chosenName);
+
+        Debug.Log($"[LAN][Server] Spawned PlayerObject. RequestedOwner={clientId}, ActualOwner={netObj.OwnerClientId}, NetworkObjectId={netObj.NetworkObjectId}");
+    }
+
+    
+    private void SpawnPlayerFor_WithTeam(ulong clientId, string chosenName, TeamId team)
+    {
+        if (!IsServer) return;
+
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var nc) && nc.PlayerObject != null)
+            return;
         
-        // Set the name on the PlayerSetup component
+        StorePlayerName(clientId, chosenName);
+        // ensure everyone (including late joiners) exists in LobbyPlayers for team lookup/UI
+        UpsertLobbyPlayer(clientId, chosenName, team);
+
+        var spawnPos = GetRandomSpawnPos();
+        var go = Instantiate(playerPrefab, spawnPos, Quaternion.identity);
+
+        var netObj = go.GetComponent<NetworkObject>();
+        netObj.SpawnAsPlayerObject(clientId);
+
         var setup = go.GetComponent<PlayerSetupLan>();
         if (setup != null)
         {
             setup.ServerSetName(chosenName);
+            setup.ServerSetTeam(team); // <<< new (add in PlayerSetupLan below)
         }
 
-        Debug.Log($"[LAN][Server] Spawned PlayerObject. RequestedOwner={clientId}, ActualOwner={netObj.OwnerClientId}, NetworkObjectId={netObj.NetworkObjectId}");
-        // Note: The name is now set by the client in PlayerSetupLan.OnNetworkSpawn
-        // but we ensure it's stored server-side for respawns
-        
+        Debug.Log($"[TeamsLobby][Server] Spawned {chosenName} on {team}");
     }
+
 
     /// <summary>
     /// LOCAL entry point. Host can call directly (spawns for host).
@@ -332,19 +680,26 @@ public class RoomManagerLan : NetworkBehaviour
         else
         {
             // Client requests respawn - server will use stored name
-            RequestRespawnServerRpc();
+            string n = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+            RequestRespawnServerRpc(n);
         }
     }
 
     [ServerRpc(RequireOwnership = false)]
-    private void RequestRespawnServerRpc(ServerRpcParams rpcParams = default)
+    private void RequestRespawnServerRpc(string requestedName, ServerRpcParams rpcParams = default)
     {
-        // Spawn a player object for the client who sent this RPC, pass in the gamertag also so host assigns
         ulong clientId = rpcParams.Receive.SenderClientId;
+
+        requestedName = SanitizeName(requestedName, clientId);
+
+        // Only set/overwrite if we don't already have a real name
+        if (!playerNames.ContainsKey(clientId) || playerNames[clientId].StartsWith("Player_"))
+            StorePlayerName(clientId, requestedName);
+
         string playerName = GetStoredPlayerName(clientId);
-            
         SpawnPlayerFor(clientId, playerName);
     }
+
 
 
     public Vector3 GetRandomSpawnPos()
@@ -355,7 +710,8 @@ public class RoomManagerLan : NetworkBehaviour
             return Vector3.zero;
         }
 
-        return spawnPoints[Random.Range(0, spawnPoints.Length)].position;
+        return spawnPoints[UnityEngine.Random.Range(0, spawnPoints.Length)].position;
+
     }
 
     private void OnEnable()
@@ -425,17 +781,26 @@ public class RoomManagerLan : NetworkBehaviour
         }
         else
         {
-            InitialQuizPassedServerRpc();
+            string n = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+            InitialQuizPassedServerRpc(n);
+
         }
     }
 
     [ServerRpc(RequireOwnership = false)]
-    private void InitialQuizPassedServerRpc(ServerRpcParams rpcParams = default)
+    private void InitialQuizPassedServerRpc(string requestedName, ServerRpcParams rpcParams = default)
     {
         ulong clientId = rpcParams.Receive.SenderClientId;
-        string playerName = GetStoredPlayerName(clientId);
+        
+        requestedName = SanitizeName(requestedName, clientId);
+        
+        
+        // Only set if we don't already have a real name stored
+        if (!playerNames.ContainsKey(clientId) || playerNames[clientId].StartsWith("Player_"))
+            StorePlayerName(clientId, requestedName);
+
         Debug.Log($"[RoomManagerLan] Initial quiz passed by {clientId}. Spawning now...");
-        SpawnPlayerFor(clientId, playerName);
+        SpawnPlayerFor(clientId, GetStoredPlayerName(clientId));
     }
     
     // send clients name before spawn (this way clients name appears in leaderboard before they answer the first 3 questions required for spawn.
@@ -451,6 +816,48 @@ public class RoomManagerLan : NetworkBehaviour
         StorePlayerName(clientId, chosenName); // updates the server cache used by ResolveName()
         Debug.Log($"[RoomManagerLan] (Server) Received early name '{chosenName}' from {clientId}");
     }
+    private string SanitizeName(string s, ulong clientId)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            s = $"Player_{clientId}";
+        s = s.Trim();
+        if (s.Length > 12) s = s.Substring(0, 12);
+        return s;
+    }
+
+    
+    public bool TryGetTeamForClient(ulong clientId, out TeamId teamId)
+    {
+        // Default
+        teamId = default;
+
+        if (LobbyPlayers == null) return false;
+
+        for (int i = 0; i < LobbyPlayers.Count; i++)
+        {
+            if (LobbyPlayers[i].clientId == clientId)
+            {
+                teamId = LobbyPlayers[i].team;
+                return true;
+            }
+        }
+
+        return false;
+    }
+    private void UpsertLobbyPlayer(ulong clientId, string playerName, TeamId team)
+    {
+        int idx = FindLobbyIndex(clientId);
+        var state = new LobbyPlayerState
+        {
+            clientId = clientId,
+            name = new FixedString32Bytes(playerName),
+            team = team
+        };
+
+        if (idx >= 0) LobbyPlayers[idx] = state;
+        else LobbyPlayers.Add(state);
+    }
+
 
     private void OnClientDisconnected(ulong clientId)
     {
@@ -461,6 +868,13 @@ public class RoomManagerLan : NetworkBehaviour
         {
             playerNames.Remove(clientId);
         }
+        
+        if (IsServer)
+        {
+            int idx = FindLobbyIndex(clientId);
+            if (idx >= 0)
+                LobbyPlayers.RemoveAt(idx);
+        }
 
         // --- Client-side host-left handling ---
         // If we are a CLIENT (not the server/host) and "we" are the one that just got disconnected,
@@ -470,6 +884,7 @@ public class RoomManagerLan : NetworkBehaviour
             _handledHostLeft = true;
             StartCoroutine(HandleHostLeftAndReturnToMenu());
         }
+        
     }
     
     private IEnumerator HandleHostLeftAndReturnToMenu()

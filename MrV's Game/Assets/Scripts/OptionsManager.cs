@@ -25,7 +25,7 @@ public class OptionsManager : MonoBehaviour
 
     private float defaultSensitivity = 1f; // sensitivity settings are .05 to 2
     private float defaultFOV = 70f;
-    private float defaultResolution = 1f;
+    private float defaultResolution = .5f;
     private int defaultQualityLevel = 0;
     private int defaultFullscreenState = 1; // 1= fullscreen, 0 = not fullscreen
     

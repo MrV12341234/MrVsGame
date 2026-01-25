@@ -276,6 +276,21 @@ public class LeaderboardManagerLAN : NetworkBehaviour
         // 3) Last resort
         return $"Player_{clientId}";
     }
+    // SERVER ONLY helpers for other server systems (TeamScoreManager, win conditions, etc.)
+    public IEnumerable<ulong> Server_GetAllClientIds()
+    {
+        if (!IsServer) yield break;
+        foreach (var id in _scores.Keys)
+            yield return id;
+    }
+
+    public int Server_GetScore(ulong clientId)
+    {
+        if (!IsServer) return 0;
+        if (_scores.TryGetValue(clientId, out var row))
+            return row.score;
+        return 0;
+    }
 }
 
 // Internal data for server & clients
@@ -288,6 +303,9 @@ public class PlayerScoreData
     public int deaths;
     public string name;
 }
+
+
+
 
 // Compact replication DTO (includes name for client convenience)
 public struct PlayerScoreDTO : INetworkSerializable
@@ -307,3 +325,4 @@ public struct PlayerScoreDTO : INetworkSerializable
         serializer.SerializeValue(ref name);
     }
 }
+

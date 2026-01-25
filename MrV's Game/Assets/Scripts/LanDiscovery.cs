@@ -35,26 +35,38 @@ public class LanDiscovery : MonoBehaviour
 
         string message = Encoding.UTF8.GetString(data);
         Debug.Log($"[LAN DISCOVERY] Received broadcast: {message}");
+
         string[] parts = message.Split('|');
 
-        if (parts.Length == 4)
+        // UPDATED: expect 5 parts now
+        if (parts.Length == 5)
         {
+            int parsedMode = 0;
+            int.TryParse(parts[4], out parsedMode);
+
             LanRoomInfo info = new LanRoomInfo
             {
                 roomName = parts[0],
                 playerCount = parts[1],
                 ipAddress = parts[2],
-                sceneName = parts[3]
+                sceneName = parts[3],
+                gameMode = parsedMode
             };
 
+            // duplicate check
+            bool alreadyExists = discoveredRooms.Exists(r =>
+                r.ipAddress == info.ipAddress &&
+                r.roomName == info.roomName);
 
-            // Avoid duplicates
-            bool alreadyExists = discoveredRooms.Exists(r => 
-                r.ipAddress == info.ipAddress && r.roomName == info.roomName);
+            if (!alreadyExists)
             {
                 discoveredRooms.Add(info);
-                Debug.Log($"[LAN DISCOVERY] Room added: {info.roomName} ({info.ipAddress})");
+                Debug.Log($"[LAN DISCOVERY] Room added: {info.roomName} ({info.ipAddress}) mode={info.gameMode}");
             }
+        }
+        else
+        {
+            Debug.LogWarning($"[LAN DISCOVERY] Broadcast ignored. Expected 5 parts, got {parts.Length}");
         }
     }
 
@@ -74,4 +86,5 @@ public class LanRoomInfo
     public string playerCount;
     public string ipAddress;
     public string sceneName;
+    public int gameMode; // 0=FFA, 1 = Teams
 }

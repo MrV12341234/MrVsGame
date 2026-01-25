@@ -31,6 +31,13 @@ public class WeaponSwitcherLAN : MonoBehaviour
             {
                 launcher.SetWeaponActive(false);
             }
+            
+            // handle claymore weapon too
+            ClaymoreWeaponLAN claymore = weapon.GetComponent<ClaymoreWeaponLAN>();
+            if (claymore != null)
+            {
+                claymore.SetWeaponActive(false);
+            }
         }
 
         // Enable the first weapon
@@ -57,6 +64,7 @@ public class WeaponSwitcherLAN : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha7)) selectedWeapon = 6;
         if (Input.GetKeyDown(KeyCode.Alpha8)) selectedWeapon = 7;
         if (Input.GetKeyDown(KeyCode.Alpha9)) selectedWeapon = 8;
+        if (Input.GetKeyDown(KeyCode.Alpha0)) selectedWeapon = 9;
 
         // Mouse scroll wheel
         if (Input.GetAxis("Mouse ScrollWheel") > 0 && timeUntilAllowSelectNextWeapon <= 0)
@@ -90,6 +98,7 @@ public class WeaponSwitcherLAN : MonoBehaviour
                 // Update weapon active state
                 LauncherPotatoLAN launcher = weapon.GetComponent<LauncherPotatoLAN>();
                 GrenadeLAN handGrenade = weapon.GetComponent<GrenadeLAN>();
+                ClaymoreWeaponLAN claymore = weapon.GetComponent<ClaymoreWeaponLAN>();
                 
                 if (launcher != null)
                 {
@@ -99,6 +108,10 @@ public class WeaponSwitcherLAN : MonoBehaviour
                 {
                     handGrenade.SetWeaponActive(isActive);
                     handGrenade.SetChargeBarActive(isActive);
+                }
+                if (claymore != null) // NEW
+                {
+                    claymore.SetWeaponActive(isActive);
                 }
             }
 

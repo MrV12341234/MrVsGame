@@ -122,12 +122,16 @@ public class PlayerHealthLan : NetworkBehaviour
     {
         if (currentHealth.Value <= 0) return;
         
+        // block friendly fire in Teams mode (server authoritative)
+        if (IsFriendlyFire(attackerClientId))
+            return;
+        
         // track latest attacker for killfeed attribution
         _lastAttackerClientId = attackerClientId;
 
         currentHealth.Value = Mathf.Max(0, currentHealth.Value - amount);
 
-// ADD: award +2 (pointsPerHit) to valid attacker when victim is still alive
+        // ADD: award +2 (pointsPerHit) to valid attacker when victim is still alive
         bool validAttacker =
             attackerClientId != ulong.MaxValue &&                  // not environment
             attackerClientId != OwnerClientId &&                   // not self-hit
@@ -241,4 +245,40 @@ public class PlayerHealthLan : NetworkBehaviour
                 hk.GetKill(victimName);
         }
     }
+    private bool IsFriendlyFire(ulong attackerClientId)
+    {
+        // Only block friendly fire in Teams mode
+        if (RoomManagerLan.Instance == null || !RoomManagerLan.Instance.IsTeamsMode)
+            return false;
+
+        // Environment damage can still hurt
+        if (attackerClientId == ulong.MaxValue)
+            return false;
+
+        // Self-damage rules stay as you already handle elsewhere
+        if (attackerClientId == OwnerClientId)
+            return false;
+
+        // Victim team (this object)
+        var victimSetup = GetComponent<PlayerSetupLan>();
+        if (victimSetup == null)
+            return false;
+
+        var victimTeam = victimSetup.GetTeam();
+
+        // Attacker team (attacker's PlayerObject)
+        if (NetworkManager.Singleton == null ||
+            !NetworkManager.Singleton.ConnectedClients.TryGetValue(attackerClientId, out var attackerClient) ||
+            attackerClient.PlayerObject == null)
+            return false;
+
+        var attackerSetup = attackerClient.PlayerObject.GetComponent<PlayerSetupLan>();
+        if (attackerSetup == null)
+            return false;
+
+        var attackerTeam = attackerSetup.GetTeam();
+
+        return attackerTeam == victimTeam;
+    }
+
 }

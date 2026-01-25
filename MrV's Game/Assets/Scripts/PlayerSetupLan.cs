@@ -14,23 +14,34 @@ public class PlayerSetupLan : NetworkBehaviour
     [Header("Hat Setup")]
     public Transform hatParent;
 
+    [Header("Team Visuals")]
+    public Renderer playerModelRenderer;  // drag your visible model renderer here
+    public Material ffaMaterial;
+    public Material blueMaterial;
+    public Material redMaterial;
+
     private NetworkVariable<byte> hatIndex =
         new NetworkVariable<byte>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
 
-    // SERVER-WRITABLE: Only server can write this
+    // Server writes this name
     private NetworkVariable<FixedString32Bytes> playerName =
         new NetworkVariable<FixedString32Bytes>("Player",
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
-    // allow other scripts (server-side killfeed) to read
+    // Server writes this team
+    private NetworkVariable<RoomManagerLan.TeamId> team =
+        new NetworkVariable<RoomManagerLan.TeamId>(
+            RoomManagerLan.TeamId.Blue,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
     public string GetPlayerNameString() => playerName.Value.ToString();
+    public RoomManagerLan.TeamId GetTeam() => team.Value;
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
-
-        Debug.Log($"[LAN] PlayerSetupLan.OnNetworkSpawn — OwnerClientId={OwnerClientId} LocalClientId={NetworkManager.Singleton.LocalClientId} IsOwner={IsOwner}");
 
         bool isLocal = IsOwner;
 
@@ -40,7 +51,7 @@ public class PlayerSetupLan : NetworkBehaviour
         if (tpPlayer) tpPlayer.SetActive(!isLocal);
         if (nameText) nameText.gameObject.SetActive(!isLocal);
 
-        // AUDIO LISTENER rule
+        // AUDIO LISTENER: disable all, enable local camera's only
         var listeners = GetComponentsInChildren<AudioListener>(true);
         foreach (var l in listeners) l.enabled = false;
         if (isLocal && fpCamera)
@@ -49,48 +60,51 @@ public class PlayerSetupLan : NetworkBehaviour
             if (camListener) camListener.enabled = true;
         }
 
-        if (isLocal)
-        {
-            // local cosmetics still owner-writable. Load saved hat choice and publish to the network
-            byte savedHat = (byte)PlayerPrefs.GetInt("hatSelected", 0); // use -1 in prefs if you support "no hat"
-            hatIndex.Value = savedHat;
-
-            // Send our chosen name to the server once per spawn (server writes NV)
-            var localName = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
-            
-            SubmitInitialNameServerRpc(localName);
-
-            // Delay cursor lock to allow UI to finish transitions
-            StartCoroutine(LockCursorDelayed());
-        }
-
-        // Apply current visuals and subscribe to changes
-        ApplyHatVisualAndOwnerHide(hatIndex.Value);               // <<< important: apply once on spawn
+        // Apply visuals once, for everyone
+        ApplyHatVisualAndOwnerHide(hatIndex.Value);
         if (nameText) nameText.text = playerName.Value.ToString();
+        ApplyTeamVisual(team.Value);
 
+        // Subscribe to changes (for everyone)
         hatIndex.OnValueChanged += OnHatIndexChanged;
         playerName.OnValueChanged += (_, newName) =>
         {
             if (nameText) nameText.text = newName.ToString();
         };
+        team.OnValueChanged += (_, newTeam) =>
+        {
+            ApplyTeamVisual(newTeam);
+        };
 
-        Debug.Log("[LAN] Player has spawned! IsOwner: " + IsOwner);
+        // Local-only: set hat + submit name
+        if (isLocal)
+        {
+            byte savedHat = (byte)PlayerPrefs.GetInt("hatSelected", 0);
+            hatIndex.Value = savedHat;
+
+            //Name Submission on spawn/respawn.
+            // var localName = PlayerPrefs.GetString("PlayerName", $"Player_{NetworkManager.Singleton.LocalClientId}");
+            // SubmitInitialNameServerRpc(localName);
+            
+            // If match already started, make sure lobby UI is not visible
+            var rm = RoomManagerLan.Instance;
+            if (rm != null && rm.IsMatchStarted && rm.teamLobbyUI != null)
+                rm.teamLobbyUI.HideLobby();
+
+            StartCoroutine(LockCursorDelayed());
+        }
     }
-    
+
     private void OnHatIndexChanged(byte _, byte newValue)
     {
         ApplyHatVisualAndOwnerHide(newValue);
     }
 
-    /// <summary>
-    /// Enables only the selected hat for everyone.
-    /// If this is the owner, also hides rendering locally so FP camera doesn't see it.
-    /// </summary>
     private void ApplyHatVisualAndOwnerHide(byte index)
     {
         UpdateHatVisual(index);
 
-        // Hide the active hat from the local owner's FP view (others still see it)
+        // Hide active hat locally for owner only
         if (IsOwner)
             HideActiveHatLocally();
     }
@@ -101,16 +115,11 @@ public class PlayerSetupLan : NetworkBehaviour
 
         for (int i = 0; i < hatParent.childCount; i++)
         {
-            // If you support "no hat" with index 255 or -1, change this condition accordingly
             bool enable = (i == index);
             hatParent.GetChild(i).gameObject.SetActive(enable);
         }
     }
-    
-    /// <summary>
-    /// Locally hides the currently active hat (renderers off, colliders optional off) for the owner only.
-    /// This is not networked; others still render your hat.
-    /// </summary>
+
     private void HideActiveHatLocally()
     {
         if (hatParent == null) return;
@@ -127,52 +136,77 @@ public class PlayerSetupLan : NetworkBehaviour
         }
         if (activeHat == null) return;
 
-        // Safest local-only hide: forceRenderingOff (keeps state consistent but invisible locally)
         var renderers = activeHat.GetComponentsInChildren<Renderer>(true);
         foreach (var r in renderers)
             r.forceRenderingOff = true;
 
-        // Optional: avoid raycast / interaction issues if hats have colliders
         var colliders = activeHat.GetComponentsInChildren<Collider>(true);
         foreach (var c in colliders)
             c.enabled = false;
-
-        // --- Alternative (layer culling):
-        // If you prefer layers, put the activeHat on a "HiddenFromFPCam" layer for the owner only
-        // and ensure the FP camera culls that layer in its Culling Mask.
-        // int hiddenLayer = LayerMask.NameToLayer("HiddenFromFPCam");
-        // if (hiddenLayer >= 0)
-        // {
-        //     foreach (var t in activeHat.GetComponentsInChildren<Transform>(true))
-        //         t.gameObject.layer = hiddenLayer;
-        // }
     }
-
 
     private System.Collections.IEnumerator LockCursorDelayed()
     {
         yield return new WaitForSeconds(0.5f);
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
-        Debug.Log("[LAN] Cursor locked and hidden.");
-    }
-    
-    // Called by server only to set NV safely
-    public void ServerSetName(string s)
-    {
-        var finalName = string.IsNullOrWhiteSpace(s) ? "Player" : s;
-        playerName.Value = new FixedString32Bytes(finalName);
-        
-        // also update server-side cache so respawns & any server logic see the correct name
-        RoomManagerLan.Instance?.StorePlayerName(OwnerClientId, finalName);
-        
-        Debug.Log($"[LAN][Server] ServerSetName for OwnerClientId={OwnerClientId} -> '{finalName}'");
     }
 
-    // Owner tells server their chosen name (one tiny RPC)
-    [ServerRpc]
-    private void SubmitInitialNameServerRpc(string chosenName)
+    private void ApplyTeamVisual(RoomManagerLan.TeamId t)
     {
-        ServerSetName(chosenName);
+        if (playerModelRenderer == null) return;
+
+        // Use PlayerPrefs to decide if teams mode is active
+        int gm = PlayerPrefs.GetInt("LAN_GameMode", 0);
+        bool isTeams = (gm == 1);
+
+        if (!isTeams)
+        {
+            if (ffaMaterial != null) playerModelRenderer.material = ffaMaterial;
+            return;
+        }
+
+        if (t == RoomManagerLan.TeamId.Blue)
+        {
+            if (blueMaterial != null) playerModelRenderer.material = blueMaterial;
+        }
+        else
+        {
+            if (redMaterial != null) playerModelRenderer.material = redMaterial;
+        }
     }
+
+    // Server-only setter called by RoomManagerLan after spawn
+    public void ServerSetTeam(RoomManagerLan.TeamId t)
+    {
+        if (!IsServer) return;
+        team.Value = t;
+    }
+
+    // Server-only setter
+    public void ServerSetName(string s)
+    {
+        if (!IsServer) return;
+
+        var finalName = string.IsNullOrWhiteSpace(s) ? "Player" : s;
+        playerName.Value = new FixedString32Bytes(finalName);
+    }
+
+
+    [ServerRpc]
+    private void SubmitInitialNameServerRpc(string chosenName, ServerRpcParams rpcParams = default)
+    {
+        if (!IsServer) return;
+
+        // The real client who sent this RPC
+        ulong senderId = rpcParams.Receive.SenderClientId;
+
+        // Set the name NetworkVariable on THIS player object
+        ServerSetName(chosenName);
+
+        // Store it in RoomManager using senderId (authoritative + correct)
+        var finalName = string.IsNullOrWhiteSpace(chosenName) ? "Player" : chosenName;
+        RoomManagerLan.Instance?.StorePlayerName(senderId, finalName);
+    }
+
 }
