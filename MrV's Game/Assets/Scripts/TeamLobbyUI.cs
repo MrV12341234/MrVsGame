@@ -3,7 +3,6 @@ using TMPro;
 using Unity.Netcode;
 using UnityEngine.SceneManagement;
 
-
 public class TeamLobbyUI : MonoBehaviour
 {
     [Header("Parents where names are spawned")]
@@ -14,27 +13,26 @@ public class TeamLobbyUI : MonoBehaviour
     public GameObject nameRowPrefab;
 
     [Header("Buttons")]
-    public GameObject startGameButtonObject; // assign your Start button GameObject
-    public GameObject switchTeamButtonObject; // assign your Switch button GameObject
+    public GameObject startGameButtonObject;        // Start button (host only)
+    public GameObject switchTeamButtonObject;       // Switch team (everyone)
+    public GameObject moveSelectedPlayerButtonObject; // <-- ADD THIS (host only)
     public GameObject quitButtonObject;
 
     private RoomManagerLan rm;
     private ulong? selectedClientId = null;
 
-
     private void Start()
     {
         rm = RoomManagerLan.Instance;
-
-        // Start button: host only
-        if (startGameButtonObject != null)
-            startGameButtonObject.SetActive(NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost);
+        RefreshHostOnlyButtons();
     }
 
     public void ShowLobby()
     {
         gameObject.SetActive(true);
         rm = RoomManagerLan.Instance;
+
+        RefreshHostOnlyButtons();   // <-- important when lobby opens
         RebuildLists();
     }
 
@@ -43,26 +41,36 @@ public class TeamLobbyUI : MonoBehaviour
         gameObject.SetActive(false);
     }
 
-
-    // NOTE: Because removing anonymous delegates is annoying,
-    // easiest beginner way: don't unsubscribe, or keep a named method.
-    // We'll do named method below for correctness:
-
     private void OnEnable()
     {
         rm = RoomManagerLan.Instance;
         if (rm != null)
-        {
             rm.LobbyPlayers.OnListChanged += OnLobbyListChanged;
-        }
+
+        RefreshHostOnlyButtons();   // <-- important if enabled later
     }
 
     private void OnDisable()
     {
         if (rm != null)
-        {
             rm.LobbyPlayers.OnListChanged -= OnLobbyListChanged;
-        }
+    }
+
+    private void RefreshHostOnlyButtons()
+    {
+        bool isHost = NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
+
+        // Start button: host only
+        if (startGameButtonObject != null)
+            startGameButtonObject.SetActive(isHost);
+
+        // Move Selected Player button: host only
+        if (moveSelectedPlayerButtonObject != null)
+            moveSelectedPlayerButtonObject.SetActive(isHost);
+
+        // Optional: if not host, clear selection so nothing looks "selectable"
+        if (!isHost)
+            selectedClientId = null;
     }
 
     private void OnLobbyListChanged(Unity.Netcode.NetworkListEvent<RoomManagerLan.LobbyPlayerState> changeEvent)
@@ -89,7 +97,6 @@ public class TeamLobbyUI : MonoBehaviour
             var p = rm.LobbyPlayers[i];
             Transform parent = (p.team == RoomManagerLan.TeamId.Blue) ? blueListParent : redListParent;
 
-            // NEW: instantiate and setup the row script
             GameObject rowObj = Instantiate(nameRowPrefab, parent);
 
             LobbyPlayerRowUI row = rowObj.GetComponent<LobbyPlayerRowUI>();
@@ -100,7 +107,6 @@ public class TeamLobbyUI : MonoBehaviour
             }
             else
             {
-                // fallback: at least set the text if the prefab doesn't have the script
                 TMP_Text text = rowObj.GetComponentInChildren<TMP_Text>();
                 if (text != null) text.text = p.name.ToString();
             }
@@ -112,52 +118,44 @@ public class TeamLobbyUI : MonoBehaviour
     {
         if (rm != null) rm.SwitchTeamServerRpc();
     }
-    
+
     public void OnClickMoveSelectedPlayer()
     {
         if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsHost) return;
         if (rm == null) return;
         if (!selectedClientId.HasValue) return;
 
-        rm.MoveSelectedPlayerServerRpc(selectedClientId.Value); // add this RPC in RoomManagerLan
+        rm.MoveSelectedPlayerServerRpc(selectedClientId.Value);
     }
-
 
     // Hook this to Start Game button OnClick
     public void OnClickStartGame()
     {
         if (rm != null) rm.StartMatchServerRpc();
     }
-    
+
     public void SelectPlayer(ulong clientId)
     {
-        // Only host should be able to select/move others
-        if (Unity.Netcode.NetworkManager.Singleton == null || !Unity.Netcode.NetworkManager.Singleton.IsHost)
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsHost)
             return;
 
         selectedClientId = clientId;
-        RebuildLists(); // rebuild highlights (simple approach)
+        RebuildLists();
     }
-    
+
     // Hook this to your Quit button OnClick
     public void OnClickQuit()
     {
-        // Optional: hide the lobby UI immediately
         gameObject.SetActive(false);
 
-        // Stop being "host" next time if you store that flag
         PlayerPrefs.SetInt("LAN_IsHost", 0);
 
-        // Shut down Netcode cleanly (works for both host and client)
         if (NetworkManager.Singleton != null)
         {
             if (NetworkManager.Singleton.IsListening)
                 NetworkManager.Singleton.Shutdown();
         }
 
-        // Load your menu scene (build index 0)
         SceneManager.LoadScene(0);
     }
-
-
 }

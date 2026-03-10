@@ -67,7 +67,7 @@ public class PlayerHealthLan : NetworkBehaviour
         if (!IsOwner) return;
 
         // Fall off map damage. (treat as environment/self; no points)
-        if (transform.position.y < -70)
+        if (transform.position.y < -70 || transform.position.y > 500)
         {
             // kill player for falling and pass our own id to killfeed as attacker for attribution
             TakeDamageServerRpc(999, NetworkManager.Singleton.LocalClientId);

@@ -5,6 +5,8 @@ using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using System.Collections.Generic;
 using UnityEngine.SceneManagement;
+using System.IO;
+using System.Linq;
 
 public class LanRoomListUI : MonoBehaviour
 {
@@ -14,10 +16,14 @@ public class LanRoomListUI : MonoBehaviour
     public Button joinRoomButton;
     public TMP_Text warningText;
 
+    // Question set dropdown (client)
+    public TMP_Dropdown questionSetDropdown;
+
     private LanDiscovery lanDiscovery;
     private LanRoomInfo selectedRoom;
     private GameObject lastSelectedButton;
-    
+
+    private List<string> _availableQuestionSets = new List<string>();
 
     private void Start()
     {
@@ -28,6 +34,36 @@ public class LanRoomListUI : MonoBehaviour
 
         warningText.text = "";
         RefreshRoomList();
+        RefreshQuestionSetsDropdown();
+    }
+
+    private void RefreshQuestionSetsDropdown()
+    {
+        if (questionSetDropdown == null) return;
+
+        _availableQuestionSets = GetQuestionSetFolderNames();
+
+        questionSetDropdown.ClearOptions();
+        questionSetDropdown.AddOptions(_availableQuestionSets);
+        questionSetDropdown.value = 0;
+        questionSetDropdown.RefreshShownValue();
+    }
+
+    private List<string> GetQuestionSetFolderNames()
+    {
+        string root = QuestionSetStorage.GetQuestionSetsRoot();
+
+        if (!Directory.Exists(root))
+            return new List<string>();
+
+        var dirs = Directory.GetDirectories(root);
+        var names = dirs
+            .Select(Path.GetFileName)
+            .Where(n => !string.IsNullOrWhiteSpace(n) && !n.StartsWith("."))
+            .OrderBy(n => n)
+            .ToList();
+
+        return names;
     }
 
     private void RefreshRoomList()
@@ -41,13 +77,15 @@ public class LanRoomListUI : MonoBehaviour
             warningText.text = "LAN discovery not found.";
             return;
         }
-        
+
+        // Optional: refresh sets when refreshing rooms (handy if teacher added folders)
+        RefreshQuestionSetsDropdown();
+
         // Use a HashSet to prevent duplicates
         HashSet<string> seenRooms = new HashSet<string>();
 
         foreach (LanRoomInfo room in lanDiscovery.discoveredRooms)
         {
-            
             // Combine IP and room name to uniquely identify a room
             string roomKey = room.ipAddress + "_" + room.roomName;
 
@@ -55,7 +93,7 @@ public class LanRoomListUI : MonoBehaviour
                 continue; // Skip duplicates
 
             seenRooms.Add(roomKey); // Track this room as added
-            
+
             GameObject entry = Instantiate(roomEntryPrefab, roomListParent);
 
             TMP_Text[] texts = entry.GetComponentsInChildren<TMP_Text>();
@@ -91,10 +129,32 @@ public class LanRoomListUI : MonoBehaviour
 
     private void OnJoinRoomClicked()
     {
+        warningText.text = "";
+
         if (selectedRoom == null)
         {
             warningText.text = "Please select a room first.";
             return;
+        }
+
+        // Ensure we have at least one question set folder
+        
+        if (_availableQuestionSets == null || _availableQuestionSets.Count == 0)
+        {
+            warningText.text = "There are no question sets in the QuestionSets folder.";
+            return;
+        }
+
+        // Save client's selected set (each client can choose differently)
+        if (questionSetDropdown != null)
+        {
+            string chosenSet = _availableQuestionSets[Mathf.Clamp(questionSetDropdown.value, 0, _availableQuestionSets.Count - 1)];
+            PlayerPrefs.SetString("SelectedQuestionSet", chosenSet);
+        }
+        else
+        {
+            // Fallback if dropdown not assigned
+            PlayerPrefs.SetString("SelectedQuestionSet", _availableQuestionSets[0]);
         }
 
         if (NetworkManager.Singleton.IsClient || NetworkManager.Singleton.IsHost)
@@ -117,8 +177,10 @@ public class LanRoomListUI : MonoBehaviour
         PlayerPrefs.SetString("JoinLAN_IP", selectedRoom.ipAddress);
         PlayerPrefs.SetInt("LAN_IsHost", 0); // this player is a client
 
-        // Load the map scene (you must know which scene to load here). Name in dropdown must match
+        // stores gamemode
+        PlayerPrefs.SetInt("LAN_GameMode", selectedRoom.gameMode);
+
+        // Load the map scene
         SceneManager.LoadScene(selectedRoom.sceneName);
     }
-
 }

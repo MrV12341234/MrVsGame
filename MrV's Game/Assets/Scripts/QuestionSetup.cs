@@ -6,11 +6,10 @@ using UnityEngine.UI;
 
 public class QuestionSetup : MonoBehaviour
 {
-    [SerializeField] 
-    public List<QuestionData> questions;
-    private QuestionData currentQuestion;
+    public List<RuntimeQuestion> questions;
+    private RuntimeQuestion currentQuestion;
     
-    private static List<QuestionData> unusedQuestions; // persists per client.Tracks questions not used
+    private static List<RuntimeQuestion> unusedQuestions; // persists per client.Tracks questions not used
     private static bool sInitialized = false;          // init guard
     
     [SerializeField]
@@ -30,7 +29,7 @@ public class QuestionSetup : MonoBehaviour
 
     private void Awake()
     {
-        GetQuestionsAssets();
+        LoadSelectedQuestionSet();
         
         // Only initialize the unused pool once per client session
         if (!sInitialized || unusedQuestions == null || unusedQuestions.Count == 0)
@@ -38,6 +37,28 @@ public class QuestionSetup : MonoBehaviour
             ResetUnusedQuestions(); // Initialize the unused questions list
             sInitialized = true;
         }
+    }
+    
+    private void LoadSelectedQuestionSet()
+    {
+        // For now, pick from PlayerPrefs. Later your host dropdown will set this.
+        string setName = PlayerPrefs.GetString("SelectedQuestionSet", "Default");
+
+        if (!QuestionSetStorage.TryLoadSet(setName, out var setFile, out var error))
+        {
+            Debug.LogError($"Failed to load set '{setName}': {error}");
+            questions = new List<RuntimeQuestion>();
+            ResetUnusedQuestions();
+            sInitialized = true;
+            return;
+        }
+
+        string folder = QuestionSetStorage.GetSetFolder(setName);
+        questions = RuntimeQuestionBuilder.BuildFromSet(setFile, folder);
+        
+        // If you change question sets between matches, you should reset the pool whenever you load a set:
+        ResetUnusedQuestions();
+        sInitialized = true;
     }
     public void InitializeNewQuestion()
     {
@@ -49,14 +70,9 @@ public class QuestionSetup : MonoBehaviour
         SetAnswerValues();
     }
 
-    private void GetQuestionsAssets()
-    {
-        questions = new List<QuestionData>(Resources.LoadAll<QuestionData>("Questions"));
-    }
-
     private void ResetUnusedQuestions()
     {
-        unusedQuestions = new List<QuestionData>(questions);
+        unusedQuestions = new List<RuntimeQuestion>(questions);
     }
 
     public void SelectNewQuestion()
@@ -80,9 +96,10 @@ public class QuestionSetup : MonoBehaviour
         questionText.text = currentQuestion.question;
         categoryText.text = currentQuestion.category;
 
-        if (currentQuestion.questionImage != null)
+        // RuntimeQuestion.cs uses imageSprite (not questionImage like before when we used QuestionData.cs and scriptable objects)
+        if (currentQuestion.imageSprite != null)
         {
-            questionImage.sprite = currentQuestion.questionImage;
+            questionImage.sprite = currentQuestion.imageSprite;
             questionImage.gameObject.SetActive(true);
         }
         else
@@ -128,7 +145,7 @@ public class QuestionSetup : MonoBehaviour
     {
 // The QuestionData states that the correct answer is always the first in the original array,
 // you can use that. Alternatively, you could retrieve the answer from the answerButton which was flagged correct.
-        return currentQuestion.answers[0];
+        return currentQuestion.correctAnswer;
     }
 
 }

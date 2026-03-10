@@ -305,8 +305,6 @@ public class PlayerScoreData
 }
 
 
-
-
 // Compact replication DTO (includes name for client convenience)
 public struct PlayerScoreDTO : INetworkSerializable
 {
