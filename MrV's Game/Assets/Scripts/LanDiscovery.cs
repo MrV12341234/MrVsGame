@@ -54,14 +54,21 @@ public class LanDiscovery : MonoBehaviour
             };
 
             // duplicate check
-            bool alreadyExists = discoveredRooms.Exists(r =>
+            LanRoomInfo existing = discoveredRooms.Find(r =>
                 r.ipAddress == info.ipAddress &&
                 r.roomName == info.roomName);
 
-            if (!alreadyExists)
+            if (existing != null)
             {
+                // update the existing entry
+                existing.playerCount = info.playerCount;
+                existing.sceneName = info.sceneName;
+                existing.gameMode = info.gameMode;
+            }
+            else
+            {
+                // add new entry
                 discoveredRooms.Add(info);
-                Debug.Log($"[LAN DISCOVERY] Room added: {info.roomName} ({info.ipAddress}) mode={info.gameMode}");
             }
         }
         else
@@ -86,5 +93,5 @@ public class LanRoomInfo
     public string playerCount;
     public string ipAddress;
     public string sceneName;
-    public int gameMode; // 0=FFA, 1 = Teams
+    public int gameMode; // 0=FFA, 1 = Teams, 2 = CTF
 }

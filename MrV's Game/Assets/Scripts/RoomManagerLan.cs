@@ -17,17 +17,22 @@ public class RoomManagerLan : NetworkBehaviour
     public string roomCode = "Map1";
     public string roomNameToJoin = "test";
     private string currentName = "Chocolate";
-    public enum LanGameMode { FFA = 0, Teams = 1 }
+    public enum LanGameMode { FFA = 0, Teams = 1, CTF = 2 }
     
     [Header("Game Mode")]
     public LanGameMode gameMode = LanGameMode.FFA;
-    public bool IsTeamsMode => gameMode == LanGameMode.Teams;
+    public bool IsTeamsMode => gameMode == LanGameMode.Teams || gameMode == LanGameMode.CTF;
+    public bool IsCTFMode => gameMode == LanGameMode.CTF;
+    
     [Header("Teams Lobby UI")]
     public TeamLobbyUI teamLobbyUI; // drag your TeamsLobbyCanvas (the object with TeamLobbyUI) here
 
     [Header("Player Setup")]
     public GameObject playerPrefab;
     public Transform[] spawnPoints;
+    [Header("CTF Spawn Points")]
+    public Transform blueCTFSpawnHolder;
+    public Transform redCTFSpawnHolder;
     public GameObject roomCamera;
 
     [Header("Trivia System")]
@@ -57,11 +62,10 @@ public class RoomManagerLan : NetworkBehaviour
     
     // Add a dictionary to track player names on the server
     private readonly Dictionary<ulong, string> playerNames = new Dictionary<ulong, string>();
-
     
     [Header("Teams Mode")]
     [SerializeField] private bool enableTeamsLobby = true;
-
+    
 // Server decides when match starts
     private NetworkVariable<bool> matchStarted =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -185,8 +189,8 @@ public class RoomManagerLan : NetworkBehaviour
         // Disable the menu/room camera on this peer
         if (roomCamera != null)
         {
-            // If we're in Teams mode and match hasn't started yet, KEEP this camera on.
-            bool isTeams = (gameMode == LanGameMode.Teams);
+            // If we're in a Teams mode and match hasn't started yet, KEEP this camera on.
+            bool isTeams = IsTeamsMode;  // Teams OR CTF
 
             if (!isTeams)
             {
@@ -351,8 +355,8 @@ public class RoomManagerLan : NetworkBehaviour
         // FIRST SPAWN GATE
         if (!hasPlayerObject && requireQuizBeforeFirstSpawn)
         {
-            // Teams pre-game lobby
-            if (gameMode == LanGameMode.Teams)
+            // Teams pre-game lobby (Teams OR CTF)
+            if (IsTeamsMode)
             {
                 if (!IsMatchStarted)
                 {
@@ -648,7 +652,7 @@ public class RoomManagerLan : NetworkBehaviour
         // ensure everyone (including late joiners) exists in LobbyPlayers for team lookup/UI
         UpsertLobbyPlayer(clientId, chosenName, team);
 
-        var spawnPos = GetRandomSpawnPos();
+        var spawnPos = IsCTFMode ? GetCTFSpawnPosForTeam(team) : GetRandomSpawnPos();
         var go = Instantiate(playerPrefab, spawnPos, Quaternion.identity);
 
         var netObj = go.GetComponent<NetworkObject>();
@@ -712,6 +716,24 @@ public class RoomManagerLan : NetworkBehaviour
 
         return spawnPoints[UnityEngine.Random.Range(0, spawnPoints.Length)].position;
 
+    }
+    // spawn point randomiser for CTF mode
+    private Vector3 GetSpawnFromHolder(Transform holder)
+    {
+        if (holder == null || holder.childCount == 0)
+            return GetRandomSpawnPos(); // fallback to your existing random spawns
+
+        int idx = UnityEngine.Random.Range(0, holder.childCount);
+        return holder.GetChild(idx).position;
+    }
+
+    private Vector3 GetCTFSpawnPosForTeam(TeamId team)
+    {
+        if (!IsCTFMode) return GetRandomSpawnPos();
+
+        return (team == TeamId.Blue)
+            ? GetSpawnFromHolder(blueCTFSpawnHolder)
+            : GetSpawnFromHolder(redCTFSpawnHolder);
     }
 
     private void OnEnable()

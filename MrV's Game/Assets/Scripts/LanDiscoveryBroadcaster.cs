@@ -52,7 +52,7 @@ public class LanDiscoveryBroadcaster : MonoBehaviour
     {
         string roomName = PlayerPrefs.GetString("LAN_RoomName", "LAN Room");
         string currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        int gameMode = PlayerPrefs.GetInt("LAN_GameMode", 0); // 0 = FFA, 1 = Teams
+        int gameMode = PlayerPrefs.GetInt("LAN_GameMode", 0); // 0 = FFA, 1 = Teams, 2 = CTF
         string message = $"{roomName}|{NetworkManager.Singleton.ConnectedClients.Count}|{GetLocalIPAddress()}|{currentScene}|{gameMode}";
 
 

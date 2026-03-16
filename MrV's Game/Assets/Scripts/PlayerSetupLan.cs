@@ -90,6 +90,8 @@ public class PlayerSetupLan : NetworkBehaviour
             var rm = RoomManagerLan.Instance;
             if (rm != null && rm.IsMatchStarted && rm.teamLobbyUI != null)
                 rm.teamLobbyUI.HideLobby();
+            
+            ApplyMapMovementSettingsIfNeeded(); // apply specific map settings (any map needs to have an empty gameobject added with MapMovementSettings.cs)
 
             StartCoroutine(LockCursorDelayed());
         }
@@ -156,25 +158,41 @@ public class PlayerSetupLan : NetworkBehaviour
     {
         if (playerModelRenderer == null) return;
 
-        // Use PlayerPrefs to decide if teams mode is active
-        int gm = PlayerPrefs.GetInt("LAN_GameMode", 0);
-        bool isTeams = (gm == 1);
+        bool isTeamBasedMode = false;
 
-        if (!isTeams)
+        // Prefer RoomManager if available
+        if (RoomManagerLan.Instance != null)
         {
-            if (ffaMaterial != null) playerModelRenderer.material = ffaMaterial;
+            isTeamBasedMode = RoomManagerLan.Instance.IsTeamsMode; // true for Teams and CTF
+        }
+        else
+        {
+            // Fallback if RoomManager isn't ready yet
+            int gm = PlayerPrefs.GetInt("LAN_GameMode", 0);
+            isTeamBasedMode =
+                gm == (int)RoomManagerLan.LanGameMode.Teams ||
+                gm == (int)RoomManagerLan.LanGameMode.CTF;
+        }
+
+        if (!isTeamBasedMode)
+        {
+            if (ffaMaterial != null)
+                playerModelRenderer.material = ffaMaterial;
             return;
         }
 
         if (t == RoomManagerLan.TeamId.Blue)
         {
-            if (blueMaterial != null) playerModelRenderer.material = blueMaterial;
+            if (blueMaterial != null)
+                playerModelRenderer.material = blueMaterial;
         }
         else
         {
-            if (redMaterial != null) playerModelRenderer.material = redMaterial;
+            if (redMaterial != null)
+                playerModelRenderer.material = redMaterial;
         }
     }
+
 
     // Server-only setter called by RoomManagerLan after spawn
     public void ServerSetTeam(RoomManagerLan.TeamId t)
@@ -208,5 +226,33 @@ public class PlayerSetupLan : NetworkBehaviour
         var finalName = string.IsNullOrWhiteSpace(chosenName) ? "Player" : chosenName;
         RoomManagerLan.Instance?.StorePlayerName(senderId, finalName);
     }
+    
+    //this method is for specific maps that have player movement overides (add more gravity etc). 
+    private void ApplyMapMovementSettingsIfNeeded()
+    {
+        if (movement == null) return;
+
+        var mapSettings = FindFirstObjectByType<MapMovementSettings>();
+
+        if (mapSettings != null && mapSettings.useOverrides)
+        {
+            movement.ApplyMovementOverrides(
+                    mapSettings.walkSpeed,
+                    mapSettings.sprintSpeed,
+                    mapSettings.maxVelocityChange,
+                    mapSettings.jumpForce,
+                    mapSettings.extraGravity,
+                    mapSettings.useGetKeyDownForJump
+            );
+
+            Debug.Log($"[PlayerSetupLan] Applied map movement overrides: jump={mapSettings.jumpForce}, extraGravity={mapSettings.extraGravity}");
+        }
+        else
+        {
+            movement.ResetToDefaults();
+            Debug.Log("[PlayerSetupLan] No map movement overrides found. Using default movement.");
+        }
+    }
+
 
 }

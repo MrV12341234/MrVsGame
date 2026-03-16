@@ -180,7 +180,15 @@ public class Weapon : MonoBehaviour
             recoiling = true;
             recovering = false;
 
-            if (Physics.Raycast(cameraTransform.position, dir, out RaycastHit hit, hitscanDistance))
+            
+            if (Physics.Raycast(
+                    cameraTransform.position,
+                    dir,
+                    out RaycastHit hit,
+                    hitscanDistance,
+                    ~0,
+                    QueryTriggerInteraction.Ignore)) // ensures bullets dont interact with colliders checked 'isTrigger'
+
             {
                 Quaternion rotation = Quaternion.LookRotation(hit.normal);
 

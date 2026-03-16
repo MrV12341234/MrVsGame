@@ -22,6 +22,10 @@ public class TeamScoreManagerLan : NetworkBehaviour
 
     private NetworkVariable<int> redScore =
         new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    
+    //called in CTFGameManagerLan
+    public static TeamScoreManagerLan Instance;
+    private void Awake() => Instance = this;
 
     public override void OnNetworkSpawn()
     {
@@ -37,7 +41,13 @@ public class TeamScoreManagerLan : NetworkBehaviour
         UpdateUI();
 
         if (IsServer)
-            StartCoroutine(Server_RecomputeTotalsLoop());
+        {
+            // If CTF, scores are flag captures, not summed player points (like in teams mode)
+            if (RoomManagerLan.Instance != null && RoomManagerLan.Instance.IsCTFMode)
+                Server_ResetCTFScores();
+            else
+                StartCoroutine(Server_RecomputeTotalsLoop());
+        }
     }
 
     private void RefreshVisibility()
@@ -52,6 +62,20 @@ public class TeamScoreManagerLan : NetworkBehaviour
     {
         if (blueScoreText) blueScoreText.text = blueScore.Value.ToString();
         if (redScoreText) redScoreText.text = redScore.Value.ToString();
+    }
+    
+    public void Server_ResetCTFScores()
+    {
+        if (!IsServer) return;
+        blueScore.Value = 0;
+        redScore.Value = 0;
+    }
+
+    public void Server_AddCTFCapture(RoomManagerLan.TeamId team)
+    {
+        if (!IsServer) return;
+        if (team == RoomManagerLan.TeamId.Blue) blueScore.Value++;
+        else redScore.Value++;
     }
 
     private IEnumerator Server_RecomputeTotalsLoop()
