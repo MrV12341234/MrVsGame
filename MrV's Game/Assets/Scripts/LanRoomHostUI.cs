@@ -131,10 +131,12 @@ public class LanRoomHostUI : MonoBehaviour
         GameMode.IsLAN = true;
         PlayerPrefs.SetString("LAN_RoomName", roomName);
         PlayerPrefs.SetInt("LAN_IsHost", 1); // this player is the host
+        PlayerPrefs.DeleteKey("JoinLAN_IP"); 
 
-        // store selected game mode (0 = FFA, 1 = Teams)
+        // store selected game mode (0 = FFA, 1 = Teams, 2 = CTF)
         int selectedMode = (gameModeDropdown != null) ? gameModeDropdown.value : 0;
         PlayerPrefs.SetInt("LAN_GameMode", selectedMode);
+        PlayerPrefs.Save();
 
         // Only load scene — do not start host yet
         string selectedScene = mapSceneNames[mapDropdown.value];
