@@ -147,42 +147,135 @@ public class RoomManagerLan : NetworkBehaviour
     }
 
     public void OnJoinClicked()
+{
+    Debug.Log("[LAN DEBUG] NetworkManager.Singleton = " + NetworkManager.Singleton);
+
+    string name = nameInputField ? nameInputField.text.Trim() : "";
+
+    if (string.IsNullOrEmpty(name))
     {
-        Debug.Log("[LAN DEBUG] NetworkManager.Singleton = " + NetworkManager.Singleton);
+        name = "Chocolate";
+        if (nameInputField) nameInputField.text = name;
+    }
 
-        string name = nameInputField ? nameInputField.text.Trim() : "";
+    if (name.Length > 12)
+        name = name.Substring(0, 12);
 
-        if (string.IsNullOrEmpty(name))
+    PlayerPrefs.SetString("PlayerName", name);
+    currentName = name;
+    PlayerPrefs.Save();
+
+    if (nameEntryUI) nameEntryUI.SetActive(false);
+    if (connectingUI) connectingUI.SetActive(true);
+
+    bool isHost = PlayerPrefs.GetInt("LAN_IsHost", 0) == 1;
+
+    if (isHost)
+    {
+        Debug.Log("[RoomManagerLan] Starting Host...");
+        StartCoroutine(StartHostRoutine());
+    }
+    else
+    {
+        Debug.Log("[RoomManagerLan] Starting Client...");
+        StartCoroutine(StartClientRoutine());
+    }
+}
+
+    private IEnumerator StartHostRoutine()
+    {
+        var nm = NetworkManager.Singleton;
+        if (nm == null)
         {
-            name = "Chocolate";
-            if (nameInputField) nameInputField.text = name;
+            ShowStartFailure("NetworkManager not found.");
+            yield break;
         }
 
-        if (name.Length > 12)
-            name = name.Substring(0, 12);
-
-        PlayerPrefs.SetString("PlayerName", name);
-        currentName = name;
-        
-        if (nameEntryUI) nameEntryUI.SetActive(false);
-       // if (connectingUI) connectingUI.SetActive(true);
-
-        bool isHost = PlayerPrefs.GetInt("LAN_IsHost", 0) == 1;
-
-        if (isHost)
+        // Force shutdown of any old state
+        if (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost)
         {
-            Debug.Log("[RoomManagerLan] Starting Host...");
-            NetworkManager.Singleton.StartHost();
-            // We spawn players in OnClientConnected; do not spawn here.
+            Debug.Log("[LAN] NetworkManager was still active before host start. Shutting down first.");
+            nm.Shutdown();
+
+            float timeout = 3f;
+            while (timeout > 0f && (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost))
+            {
+                timeout -= Time.unscaledDeltaTime;
+                yield return null;
+            }
+        }
+
+        // Give NGO a moment to fully settle
+        yield return null;
+        yield return null;
+
+        // Fully reset Unity Transport for HOST mode
+        var transport = nm.GetComponent<UnityTransport>();
+        if (transport != null)
+        {
+            transport.SetConnectionData("127.0.0.1", 7777, "0.0.0.0");
+            Debug.Log("[LAN] Host transport reset with SetConnectionData.");
         }
         else
         {
-            Debug.Log("[RoomManagerLan] Starting Client...");
-            string ip = PlayerPrefs.GetString("JoinLAN_IP", "127.0.0.1");
-            Debug.Log($"[RoomManagerLan] Client will attempt to connect to: {ip}");
-            LanNetworkManager.Instance.JoinLanGame(ip); // calls StartClient()
+            ShowStartFailure("UnityTransport not found on NetworkManager.");
+            yield break;
+        }
+
+        yield return null;
+
+        bool started = nm.StartHost();
+        Debug.Log("[LAN] StartHost returned: " + started);
+
+        if (!started)
+        {
+            ShowStartFailure("Failed to start host.");
+            yield break;
         }
     }
+
+private IEnumerator StartClientRoutine()
+{
+    var nm = NetworkManager.Singleton;
+    if (nm == null)
+    {
+        ShowStartFailure("NetworkManager not found.");
+        yield break;
+    }
+
+    // Hard reset any leftover state before client start too
+    if (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost)
+    {
+        Debug.Log("[LAN] NetworkManager still active before client start. Forcing shutdown first.");
+        nm.Shutdown();
+
+        float timeout = 2f;
+        while (timeout > 0f && (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost))
+        {
+            timeout -= Time.unscaledDeltaTime;
+            yield return null;
+        }
+    }
+
+    yield return null;
+
+    string ip = PlayerPrefs.GetString("JoinLAN_IP", "127.0.0.1");
+    Debug.Log($"[RoomManagerLan] Client will attempt to connect to: {ip}");
+
+    LanNetworkManager.Instance.JoinLanGame(ip);
+}
+
+private void ShowStartFailure(string msg)
+{
+    Debug.LogError("[LAN] " + msg);
+
+    if (connectingUI) connectingUI.SetActive(false);
+    if (nameEntryUI) nameEntryUI.SetActive(true);
+    if (warningText) warningText.text = msg;
+
+    Cursor.visible = true;
+    Cursor.lockState = CursorLockMode.None;
+}
 
     public override void OnNetworkSpawn()
     {

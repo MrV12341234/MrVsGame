@@ -12,6 +12,7 @@ public class PauseMenuManager : MonoBehaviour
     {
         IsGamePaused = false;
     }
+
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -28,34 +29,60 @@ public class PauseMenuManager : MonoBehaviour
 
     public void LeaveGame()
     {
-        // Shut down LAN session if running
-        if (GameMode.IsLAN && Unity.Netcode.NetworkManager.Singleton.IsListening)
-        {
-            Unity.Netcode.NetworkManager.Singleton.Shutdown();
-            Debug.Log("[LAN] NetworkManager shut down.");
-        }
-
-        StartCoroutine(DelayedLoadMenuScene());
+        StartCoroutine(LeaveGameRoutine());
     }
 
-    IEnumerator DelayedLoadMenuScene()
+    private IEnumerator LeaveGameRoutine()
     {
         IsGamePaused = false;
 
-        yield return StartCoroutine(LeaderboardManager.ResetPlayerStatsAndWait());
+        // --- FULL LAN SHUTDOWN / RESET ---
+        if (GameMode.IsLAN && Unity.Netcode.NetworkManager.Singleton != null)
         {
-            Debug.Log("Stats reset complete. Now leaving room.");
+            var nm = Unity.Netcode.NetworkManager.Singleton;
+
+            if (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost)
+            {
+                nm.Shutdown();
+                Debug.Log("[LAN] NetworkManager shutdown requested.");
+            }
+
+            // Wait a short moment for NGO to fully reset
+            float timeout = 2f;
+            while (timeout > 0f && (nm.IsListening || nm.IsClient || nm.IsServer || nm.IsHost))
+            {
+                timeout -= Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            // Clear leftover LAN session state
+            GameMode.IsLAN = false;
+            PlayerPrefs.SetInt("LAN_IsHost", 0);
+            PlayerPrefs.DeleteKey("JoinLAN_IP");
+            PlayerPrefs.DeleteKey("LAN_RoomName");
+            PlayerPrefs.Save();
+
+            Debug.Log("[LAN] LAN session state reset complete.");
         }
 
-        PhotonNetwork.LeaveRoom();
-        yield return new WaitUntil(() => !PhotonNetwork.InRoom);
+        // --- EXISTING CLEANUP for Photon ---
+        yield return StartCoroutine(LeaderboardManager.ResetPlayerStatsAndWait());
+        Debug.Log("Stats reset complete. Now leaving room.");
 
-        PhotonNetwork.Disconnect();
-        yield return new WaitUntil(() => !PhotonNetwork.IsConnected);
+        if (PhotonNetwork.IsConnected)
+        {
+            if (PhotonNetwork.InRoom)
+            {
+                PhotonNetwork.LeaveRoom();
+                yield return new WaitUntil(() => !PhotonNetwork.InRoom);
+            }
+
+            PhotonNetwork.Disconnect();
+            yield return new WaitUntil(() => !PhotonNetwork.IsConnected);
+        }
 
         SceneManager.LoadScene(0);
     }
-
 
     public void ClosePauseMenu()
     {
