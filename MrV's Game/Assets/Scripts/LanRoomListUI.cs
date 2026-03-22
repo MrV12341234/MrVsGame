@@ -36,6 +36,15 @@ public class LanRoomListUI : MonoBehaviour
         RefreshRoomList();
         RefreshQuestionSetsDropdown();
     }
+    private void OnEnable()
+    {
+        if (warningText != null)
+            warningText.text = "";
+
+        if (gameObject.activeInHierarchy)
+            RefreshRoomList();
+        RefreshQuestionSetsDropdown();
+    }
 
     private void RefreshQuestionSetsDropdown()
     {
@@ -77,10 +86,6 @@ public class LanRoomListUI : MonoBehaviour
             warningText.text = "LAN discovery not found.";
             return;
         }
-
-        // Optional: refresh sets when refreshing rooms (handy if teacher added folders)
-        RefreshQuestionSetsDropdown();
-
         // Use a HashSet to prevent duplicates
         HashSet<string> seenRooms = new HashSet<string>();
 

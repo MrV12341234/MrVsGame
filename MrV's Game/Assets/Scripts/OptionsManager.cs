@@ -27,7 +27,7 @@ public class OptionsManager : MonoBehaviour
     private float defaultFOV = 70f;
     private float defaultResolution = .5f;
     private int defaultQualityLevel = 0;
-    private int defaultFullscreenState = 1; // 1= fullscreen, 0 = not fullscreen
+    private int defaultFullscreenState = 0; // 1= fullscreen, 0 = not fullscreen
     
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -73,8 +73,9 @@ public class OptionsManager : MonoBehaviour
 
     public void UpdateFullScreenMode(bool mode)
     {
-        Screen.fullScreenMode = mode ? FullScreenMode.ExclusiveFullScreen : FullScreenMode.FullScreenWindow;
+        Screen.fullScreenMode = mode ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
         PlayerPrefs.SetInt("savedFullscreenState", mode ? 1 : 0);
+        PlayerPrefs.Save();
     }
     
     public void UpdateFOV(float value)
