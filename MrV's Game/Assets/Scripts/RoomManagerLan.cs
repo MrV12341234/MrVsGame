@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.SceneManagement;
 using Unity.Collections;
+using UnityEngine.EventSystems;
 
 [NetworkMode(NetworkMode.LAN)]
 public class RoomManagerLan : NetworkBehaviour
@@ -70,6 +71,16 @@ public class RoomManagerLan : NetworkBehaviour
     private NetworkVariable<bool> matchStarted =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     public bool IsMatchStarted => matchStarted.Value;
+    
+    // Server decides whether players are allowed to switch teams in the lobby
+    private NetworkVariable<bool> teamsLocked =
+        new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+    public bool AreTeamsLocked => teamsLocked.Value;
+
+// UI can subscribe to this to refresh when the lock changes
+    public event Action<bool> OnTeamsLockedChanged;
+    
+    private Coroutine _focusNameFieldRoutine;
     
 
 // Synced lobby list (everyone can read)
@@ -141,46 +152,77 @@ public class RoomManagerLan : NetworkBehaviour
             if (nameEntryUI) nameEntryUI.SetActive(true);
             Cursor.visible = true;
             Cursor.lockState = CursorLockMode.None;
+            FocusNameInputField();
         }
         
         Debug.Log("[RoomManagerLan] Game mode from prefs = " + gameMode);
     }
+    
+    private void Update()
+    {
+        // Only allow Enter key -to-join while the name entry UI is open
+        if (nameEntryUI == null || !nameEntryUI.activeInHierarchy)
+            return;
+
+        // Don't allow repeated Enter presses once we're already connecting
+        if (connectingUI != null && connectingUI.activeInHierarchy)
+            return;
+
+        // Only trigger when the player is actually typing in the name field
+        if (nameInputField == null)
+           return;
+
+        // Support both main Enter and keypad Enter
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        {
+            OnJoinClicked();
+        }
+    }
 
     public void OnJoinClicked()
-{
-    Debug.Log("[LAN DEBUG] NetworkManager.Singleton = " + NetworkManager.Singleton);
-
-    string name = nameInputField ? nameInputField.text.Trim() : "";
-
-    if (string.IsNullOrEmpty(name))
     {
-        name = "Chocolate";
-        if (nameInputField) nameInputField.text = name;
+        Debug.Log("[LAN DEBUG] NetworkManager.Singleton = " + NetworkManager.Singleton);
+        
+        if (warningText != null)
+            warningText.text = "";
+
+        string name = nameInputField ? nameInputField.text.Trim() : "";
+
+        if (string.IsNullOrEmpty(name))
+        {
+            name = "Chocolate";
+            if (nameInputField) nameInputField.text = name;
+        }
+
+        if (name.Length > 12)
+            name = name.Substring(0, 12);
+
+        if (GamertagRoomNameBlockedWords.ContainsBlockedWord(name))
+        {
+            ShowNameWarning("Please enter an appropriate name");
+            return;
+        }
+
+        PlayerPrefs.SetString("PlayerName", name);
+        currentName = name;
+        PlayerPrefs.Save();
+
+        if (nameEntryUI) nameEntryUI.SetActive(false);
+        if (connectingUI) connectingUI.SetActive(true);
+
+        bool isHost = PlayerPrefs.GetInt("LAN_IsHost", 0) == 1;
+
+        if (isHost)
+        {
+            Debug.Log("[RoomManagerLan] Starting Host...");
+            StartCoroutine(StartHostRoutine());
+        }
+        else
+        {
+            Debug.Log("[RoomManagerLan] Starting Client...");
+            StartCoroutine(StartClientRoutine());
+        }
     }
-
-    if (name.Length > 12)
-        name = name.Substring(0, 12);
-
-    PlayerPrefs.SetString("PlayerName", name);
-    currentName = name;
-    PlayerPrefs.Save();
-
-    if (nameEntryUI) nameEntryUI.SetActive(false);
-    if (connectingUI) connectingUI.SetActive(true);
-
-    bool isHost = PlayerPrefs.GetInt("LAN_IsHost", 0) == 1;
-
-    if (isHost)
-    {
-        Debug.Log("[RoomManagerLan] Starting Host...");
-        StartCoroutine(StartHostRoutine());
-    }
-    else
-    {
-        Debug.Log("[RoomManagerLan] Starting Client...");
-        StartCoroutine(StartClientRoutine());
-    }
-}
 
     private IEnumerator StartHostRoutine()
     {
@@ -271,6 +313,7 @@ private void ShowStartFailure(string msg)
 
     if (connectingUI) connectingUI.SetActive(false);
     if (nameEntryUI) nameEntryUI.SetActive(true);
+    FocusNameInputField();
     if (warningText) warningText.text = msg;
 
     Cursor.visible = true;
@@ -314,6 +357,10 @@ private void ShowStartFailure(string msg)
         // handle late joiners: if match already started, kill room camera locally
         matchStarted.OnValueChanged += OnMatchStartedChanged;
         OnMatchStartedChanged(false, matchStarted.Value); // apply current value right now
+
+// keep teams lock UI synced for everyone, including late joiners
+        teamsLocked.OnValueChanged += OnTeamsLockedValueChanged;
+        OnTeamsLockedValueChanged(teamsLocked.Value, teamsLocked.Value); // apply current value right now
         
     }
     
@@ -584,10 +631,7 @@ private void ShowStartFailure(string msg)
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(playerName))
-            playerName = $"Player_{clientId}";
-        if (playerName.Length > 12)
-            playerName = playerName.Substring(0, 12);
+        playerName = SanitizeName(playerName, clientId);
 
         // Store name in your existing server cache too
         StorePlayerName(clientId, playerName);
@@ -608,11 +652,17 @@ private void ShowStartFailure(string msg)
         Debug.Log($"[TeamsLobby][Server] {playerName} entered lobby on team {team}");
     }
     
+    private void OnTeamsLockedValueChanged(bool oldValue, bool newValue)
+    {
+        OnTeamsLockedChanged?.Invoke(newValue);
+    }
+    
     [ServerRpc(RequireOwnership = false)]
     public void SwitchTeamServerRpc(ServerRpcParams rpcParams = default)
     {
         ulong clientId = rpcParams.Receive.SenderClientId;
         if (matchStarted.Value) return;
+        if (teamsLocked.Value) return;
 
         int idx = FindLobbyIndex(clientId);
         if (idx < 0) return;
@@ -623,6 +673,23 @@ private void ShowStartFailure(string msg)
 
         Debug.Log($"[TeamsLobby][Server] {s.name} switched to {s.team}");
     }
+    
+    [ServerRpc(RequireOwnership = false)]
+    public void SetTeamsLockedServerRpc(bool locked, ServerRpcParams rpcParams = default)
+    {
+        // Only host/server can do this
+        if (!IsServer) return;
+
+        // Optional extra protection: only allow the host client to request it
+        if (rpcParams.Receive.SenderClientId != NetworkManager.Singleton.LocalClientId)
+            return;
+
+        if (matchStarted.Value) return;
+
+        teamsLocked.Value = locked;
+        Debug.Log($"[TeamsLobby][Server] Teams locked = {locked}");
+    }
+    
     [ServerRpc(RequireOwnership = false)]
     public void StartMatchServerRpc(ServerRpcParams rpcParams = default)
     {
@@ -796,6 +863,12 @@ private void ShowStartFailure(string msg)
         string playerName = GetStoredPlayerName(clientId);
         SpawnPlayerFor(clientId, playerName);
     }
+    // for the teams lobby 'lock change teams toggle'
+    public override void OnNetworkDespawn()
+    {
+        matchStarted.OnValueChanged -= OnMatchStartedChanged;
+        teamsLocked.OnValueChanged -= OnTeamsLockedValueChanged;
+    }
 
 
 
@@ -923,10 +996,7 @@ private void ShowStartFailure(string msg)
     private void SubmitNameServerRpc(string chosenName, ServerRpcParams rpcParams = default)
     {
         var clientId = rpcParams.Receive.SenderClientId;
-        if (string.IsNullOrWhiteSpace(chosenName))
-            chosenName = $"Player_{clientId}";
-        if (chosenName.Length > 12)
-            chosenName = chosenName.Substring(0, 12);
+        chosenName = SanitizeName(chosenName, clientId);
 
         StorePlayerName(clientId, chosenName); // updates the server cache used by ResolveName()
         Debug.Log($"[RoomManagerLan] (Server) Received early name '{chosenName}' from {clientId}");
@@ -935,8 +1005,18 @@ private void ShowStartFailure(string msg)
     {
         if (string.IsNullOrWhiteSpace(s))
             s = $"Player_{clientId}";
+
         s = s.Trim();
-        if (s.Length > 12) s = s.Substring(0, 12);
+
+        if (s.Length > 12)
+            s = s.Substring(0, 12);
+
+        if (GamertagRoomNameBlockedWords.ContainsBlockedWord(s))
+            s = $"Player_{clientId}";
+
+        if (s.Length > 12)
+            s = s.Substring(0, 12);
+
         return s;
     }
 
@@ -972,6 +1052,8 @@ private void ShowStartFailure(string msg)
         if (idx >= 0) LobbyPlayers[idx] = state;
         else LobbyPlayers.Add(state);
     }
+    
+    
 
 
     private void OnClientDisconnected(ulong clientId)
@@ -1052,5 +1134,53 @@ private void ShowStartFailure(string msg)
 
         // Last resort: log it.
         Debug.LogWarning($"[LAN] {msg}");
+    }
+    
+    //Used in username entry.
+    private void ShowNameWarning(string message)
+    {
+        if (connectingUI) connectingUI.SetActive(false);
+        if (nameEntryUI) nameEntryUI.SetActive(true);
+        FocusNameInputField();
+        
+
+        if (warningText != null)
+        {
+            warningText.color = Color.red;
+            warningText.text = message;
+        }
+
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+    }
+    
+    private void FocusNameInputField()
+    {
+        if (_focusNameFieldRoutine != null)
+            StopCoroutine(_focusNameFieldRoutine);
+
+        _focusNameFieldRoutine = StartCoroutine(FocusNameInputFieldRoutine());
+    }
+
+    private IEnumerator FocusNameInputFieldRoutine()
+    {
+        // Wait a moment so the UI is fully active before focusing
+        yield return null;
+        yield return null;
+
+        if (nameEntryUI == null || !nameEntryUI.activeInHierarchy)
+            yield break;
+
+        if (nameInputField == null)
+            yield break;
+
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(nameInputField.gameObject);
+        }
+
+        nameInputField.Select();
+        nameInputField.ActivateInputField();
+        nameInputField.MoveTextEnd(false);
     }
 }

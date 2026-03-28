@@ -202,7 +202,13 @@ public class LanRoomHostUI : MonoBehaviour
         string roomName = roomNameInputField.text.Trim();
         if (string.IsNullOrEmpty(roomName))
         {
-            warningText.text = "Please enter a LAN room name.";
+            ShowWarning("Please enter a LAN room name.");
+            return;
+        }
+
+        if (GamertagRoomNameBlockedWords.ContainsBlockedWord(roomName))
+        {
+            ShowWarning("Please enter an appropriate name");
             return;
         }
 
@@ -231,5 +237,14 @@ public class LanRoomHostUI : MonoBehaviour
         // Only load scene — do not start host yet
         string selectedScene = mapSceneNames[mapDropdown.value];
         SceneManager.LoadScene(selectedScene);
+    }
+    
+    private void ShowWarning(string message)
+    {
+        if (warningText != null)
+        {
+            warningText.color = Color.red;
+            warningText.text = message;
+        }
     }
 }

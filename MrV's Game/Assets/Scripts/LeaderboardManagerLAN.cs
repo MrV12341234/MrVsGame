@@ -24,7 +24,7 @@ public class LeaderboardManagerLAN : NetworkBehaviour
     [Tooltip("Points awarded to the attacker per kill")]
     public int pointsPerKill = 5;
     [Tooltip("Points awarded for answering a trivia question correctly")]
-    public int pointsPerCorrectAnswer = 10;
+    public int pointsPerCorrectAnswer = 0;
     [Tooltip("Points deducted for answering a trivia question incorrectly")]
     public int pointsPerWrongAnswer = -5;
 
