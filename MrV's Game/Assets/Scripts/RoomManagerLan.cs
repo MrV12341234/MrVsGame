@@ -19,11 +19,13 @@ public class RoomManagerLan : NetworkBehaviour
     public string roomNameToJoin = "test";
     private string currentName = "Chocolate";
     public enum LanGameMode { FFA = 0, Teams = 1, CTF = 2 }
+    public enum MatchEndMode { None = 0, Timer = 1, Points = 2 }
     
     [Header("Game Mode")]
     public LanGameMode gameMode = LanGameMode.FFA;
     public bool IsTeamsMode => gameMode == LanGameMode.Teams || gameMode == LanGameMode.CTF;
     public bool IsCTFMode => gameMode == LanGameMode.CTF;
+    
     
     [Header("Teams Lobby UI")]
     public TeamLobbyUI teamLobbyUI; // drag your TeamsLobbyCanvas (the object with TeamLobbyUI) here
@@ -76,6 +78,23 @@ public class RoomManagerLan : NetworkBehaviour
     private NetworkVariable<bool> teamsLocked =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
     public bool AreTeamsLocked => teamsLocked.Value;
+    
+    //store values for how the game ends
+    private NetworkVariable<int> matchEndMode =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private NetworkVariable<int> matchLengthSeconds =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    private NetworkVariable<int> targetPointsToWin =
+        new NetworkVariable<int>(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+
+    public MatchEndMode CurrentMatchEndMode => (MatchEndMode)matchEndMode.Value;
+    public int MatchLengthSeconds => matchLengthSeconds.Value;
+    public int TargetPointsToWin => targetPointsToWin.Value;
+
+    public bool UsesTimer => CurrentMatchEndMode == MatchEndMode.Timer && MatchLengthSeconds > 0;
+    public bool UsesPoints => CurrentMatchEndMode == MatchEndMode.Points && TargetPointsToWin > 0;
 
 // UI can subscribe to this to refresh when the lock changes
     public event Action<bool> OnTeamsLockedChanged;
@@ -322,6 +341,11 @@ private void ShowStartFailure(string msg)
 
     public override void OnNetworkSpawn()
     {
+        if (IsServer)
+        {
+            InitializeMatchEndSettingsFromPrefs();
+        }
+        
         // Disable the menu/room camera on this peer
         if (roomCamera != null)
         {
@@ -715,6 +739,9 @@ private void ShowStartFailure(string msg)
 
         // Tell everyone to hide lobby UI
         HideLobbyClientRpc();
+        
+        //start the match timer (if game mode has timer selected)
+        MatchTimerLAN.Instance?.Server_StartTimer();
     }
 
     [ClientRpc]
@@ -796,6 +823,8 @@ private void ShowStartFailure(string msg)
         var setup = go.GetComponent<PlayerSetupLan>();
         if (setup != null)
             setup.ServerSetName(chosenName);
+
+        TryStartFFATimerIfReady();
 
         Debug.Log($"[LAN][Server] Spawned PlayerObject. RequestedOwner={clientId}, ActualOwner={netObj.OwnerClientId}, NetworkObjectId={netObj.NetworkObjectId}");
     }
@@ -1053,7 +1082,52 @@ private void ShowStartFailure(string msg)
         else LobbyPlayers.Add(state);
     }
     
+    private void InitializeMatchEndSettingsFromPrefs()
+    {
+        if (!IsServer) return;
+
+        MatchEndMode selectedEndMode = (MatchEndMode)PlayerPrefs.GetInt("LAN_EndMode", 0);
+        int timerMinutes = Mathf.Max(0, PlayerPrefs.GetInt("LAN_TimerMinutes", 0));
+        int pointsToWin = Mathf.Max(0, PlayerPrefs.GetInt("LAN_TargetPoints", 0));
+
+        matchEndMode.Value = (int)selectedEndMode;
+        matchLengthSeconds.Value = (selectedEndMode == MatchEndMode.Timer) ? timerMinutes * 60 : 0;
+        targetPointsToWin.Value = (selectedEndMode == MatchEndMode.Points) ? pointsToWin : 0;
+
+        Debug.Log($"[RoomManagerLan] Match end settings initialized. Mode={selectedEndMode}, Seconds={matchLengthSeconds.Value}, Points={targetPointsToWin.Value}");
+    }
     
+    private int GetSpawnedPlayerCount()
+    {
+        if (NetworkManager.Singleton == null)
+            return 0;
+
+        int count = 0;
+
+        foreach (var kvp in NetworkManager.Singleton.ConnectedClients)
+        {
+            if (kvp.Value != null && kvp.Value.PlayerObject != null)
+                count++;
+        }
+
+        return count;
+    }
+
+    private void TryStartFFATimerIfReady()
+    {
+        if (!IsServer) return;
+        if (IsTeamsMode) return;
+
+        var timer = MatchTimerLAN.Instance;
+        if (timer == null) return;
+        if (!UsesTimer) return;
+        if (timer.TimerStarted) return;
+
+        if (GetSpawnedPlayerCount() >= 2)
+        {
+            timer.Server_StartTimer();
+        }
+    }
 
 
     private void OnClientDisconnected(ulong clientId)

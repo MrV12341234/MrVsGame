@@ -23,6 +23,20 @@ public class LanRoomHostUI : MonoBehaviour
     public Toggle ctfToggle;
     public GameObject ctfToggleRow; // assign the whole CTF row here
 
+    [Header("How the Game Ends")]
+    public Toggle timerEndToggle;
+    public Toggle pointsEndToggle;
+    public Toggle noneEndToggle;
+
+    [Tooltip("Parent object that holds the changing label + input field.")]
+    public GameObject endValueRow;
+
+    [Tooltip("Label beside the shared input field. Example: Minutes / Points to Win")]
+    public TMP_Text endValueLabel;
+
+    [Tooltip("Shared input field used for either timer minutes or points target.")]
+    public TMP_InputField endValueInputField;
+
     [Header("CTF Supported Maps")]
     public List<string> ctfSupportedMaps = new List<string>();
 
@@ -54,6 +68,13 @@ public class LanRoomHostUI : MonoBehaviour
     // only add maps that have Ctf
     private List<string> _availableQuestionSets = new List<string>();
 
+    private enum MatchEndMode
+    {
+        None = 0,
+        Timer = 1,
+        Points = 2
+    }
+
     private void Start()
     {
         hostButton.onClick.AddListener(OnHostClicked);
@@ -61,13 +82,24 @@ public class LanRoomHostUI : MonoBehaviour
         if (mapDropdown != null)
             mapDropdown.onValueChanged.AddListener(OnMapDropdownChanged);
 
+        if (timerEndToggle != null)
+            timerEndToggle.onValueChanged.AddListener(_ => RefreshEndConditionUI());
+
+        if (pointsEndToggle != null)
+            pointsEndToggle.onValueChanged.AddListener(_ => RefreshEndConditionUI());
+
+        if (noneEndToggle != null)
+            noneEndToggle.onValueChanged.AddListener(_ => RefreshEndConditionUI());
+
         warningText.text = "";
 
         SetupMapDropdown();
         RefreshQuestionSetsDropdown();
         SetupDefaultGameMode();
+        SetupDefaultEndCondition();
         UpdateMapPreview();
         UpdateAvailableGameModes();
+        RefreshEndConditionUI();
     }
 
     private void OnEnable()
@@ -78,6 +110,7 @@ public class LanRoomHostUI : MonoBehaviour
         RefreshQuestionSetsDropdown();
         UpdateMapPreview();
         UpdateAvailableGameModes();
+        RefreshEndConditionUI();
     }
 
     private void SetupMapDropdown()
@@ -127,6 +160,17 @@ public class LanRoomHostUI : MonoBehaviour
         }
     }
 
+    private void SetupDefaultEndCondition()
+    {
+        if (timerEndToggle == null || pointsEndToggle == null || noneEndToggle == null)
+            return;
+
+        if (!timerEndToggle.isOn && !pointsEndToggle.isOn && !noneEndToggle.isOn)
+        {
+            noneEndToggle.isOn = true;
+        }
+    }
+
     private void UpdateAvailableGameModes()
     {
         bool supportsCTF = SelectedMapSupportsCTF();
@@ -161,6 +205,89 @@ public class LanRoomHostUI : MonoBehaviour
             return 2; // CTF
 
         return 0; // FFA default
+    }
+
+    private MatchEndMode GetSelectedEndMode()
+    {
+        if (timerEndToggle != null && timerEndToggle.isOn)
+            return MatchEndMode.Timer;
+
+        if (pointsEndToggle != null && pointsEndToggle.isOn)
+            return MatchEndMode.Points;
+
+        return MatchEndMode.None;
+    }
+
+    private void RefreshEndConditionUI()
+    {
+        MatchEndMode mode = GetSelectedEndMode();
+        bool showValueRow = mode != MatchEndMode.None;
+
+        if (endValueRow != null)
+            endValueRow.SetActive(showValueRow);
+
+        if (!showValueRow)
+            return;
+
+        if (endValueLabel != null)
+        {
+            if (mode == MatchEndMode.Timer)
+                endValueLabel.text = "Minutes";
+            else
+                endValueLabel.text = "Points to Win";
+        }
+
+        if (endValueInputField != null)
+        {
+            endValueInputField.contentType = TMP_InputField.ContentType.IntegerNumber;
+
+            if (endValueInputField.placeholder is TMP_Text placeholderText)
+            {
+                if (mode == MatchEndMode.Timer)
+                    placeholderText.text = "Enter minutes";
+                else
+                    placeholderText.text = "Enter points";
+            }
+        }
+    }
+
+    private bool TryGetEndSettings(out MatchEndMode endMode, out int timerMinutes, out int targetPoints)
+    {
+        endMode = GetSelectedEndMode();
+        timerMinutes = 0;
+        targetPoints = 0;
+
+        if (endMode == MatchEndMode.None)
+            return true;
+
+        string rawValue = endValueInputField != null ? endValueInputField.text.Trim() : "";
+
+        if (string.IsNullOrEmpty(rawValue))
+        {
+            if (endMode == MatchEndMode.Timer)
+                ShowWarning("Please enter the number of minutes for the timer.");
+            else
+                ShowWarning("Please enter the number of points required to win.");
+
+            return false;
+        }
+
+        if (!int.TryParse(rawValue, out int parsedValue) || parsedValue <= 0)
+        {
+            if (endMode == MatchEndMode.Timer)
+                ShowWarning("Please enter a valid number of minutes.");
+            else
+                ShowWarning("Please enter a valid number of points.");
+
+            return false;
+        }
+
+        if (endMode == MatchEndMode.Timer)
+            timerMinutes = parsedValue;
+        else if (endMode == MatchEndMode.Points)
+            targetPoints = parsedValue;
+
+        return true;
     }
 
     private void RefreshQuestionSetsDropdown()
@@ -219,6 +346,11 @@ public class LanRoomHostUI : MonoBehaviour
             return;
         }
 
+        if (!TryGetEndSettings(out MatchEndMode endMode, out int timerMinutes, out int targetPoints))
+        {
+            return;
+        }
+
         // Save host's selected set for gameplay
         string chosenSet = _availableQuestionSets[Mathf.Clamp(questionSetDropdown.value, 0, _availableQuestionSets.Count - 1)];
         PlayerPrefs.SetString("SelectedQuestionSet", chosenSet);
@@ -227,18 +359,24 @@ public class LanRoomHostUI : MonoBehaviour
         PlayerPrefs.SetString("LAN_RoomName", roomName);
         PlayerPrefs.SetInt("LAN_IsHost", 1);
         PlayerPrefs.DeleteKey("JoinLAN_IP");
-        
 
         // store selected game mode (0 = FFA, 1 = Teams, 2 = CTF)
         int selectedMode = GetSelectedGameMode();
         PlayerPrefs.SetInt("LAN_GameMode", selectedMode);
+
+        // store match end settings for the host's newly created room
+        // LAN_EndMode: 0 = None, 1 = Timer, 2 = Points
+        PlayerPrefs.SetInt("LAN_EndMode", (int)endMode);
+        PlayerPrefs.SetInt("LAN_TimerMinutes", timerMinutes);
+        PlayerPrefs.SetInt("LAN_TargetPoints", targetPoints);
+
         PlayerPrefs.Save();
-        
+
         // Only load scene — do not start host yet
         string selectedScene = mapSceneNames[mapDropdown.value];
         SceneManager.LoadScene(selectedScene);
     }
-    
+
     private void ShowWarning(string message)
     {
         if (warningText != null)

@@ -113,6 +113,8 @@ public class LeaderboardManagerLAN : NetworkBehaviour
 
         row.score += pointsPerHit;
         _scores[attackerClientId] = row;
+        // after hit, check to see if score crossed the end of match threshold
+        Server_CheckForFFAPointsWin();
     }
 
     public void Server_AwardKill(ulong attackerClientId)
@@ -123,6 +125,8 @@ public class LeaderboardManagerLAN : NetworkBehaviour
         row.kills += 1;
         row.score += pointsPerKill;
         _scores[attackerClientId] = row;
+        // after kill, check to see if your score crossed the end of match threshold
+        Server_CheckForFFAPointsWin();
     }
 
     public void Server_RegisterDeath(ulong victimClientId)
@@ -141,6 +145,8 @@ public class LeaderboardManagerLAN : NetworkBehaviour
 
         row.score += pointsPerCorrectAnswer;
         _scores[clientId] = row;
+        // after points added for correct answer, check to see if total score crossed the end of match threshold
+        Server_CheckForFFAPointsWin();
     }
 
     public void Server_AwardWrong(ulong clientId)
@@ -150,6 +156,8 @@ public class LeaderboardManagerLAN : NetworkBehaviour
 
         row.score += pointsPerWrongAnswer;
         _scores[clientId] = row;
+        // after wrong answer, check to see if score crossed the end of match threshold
+        Server_CheckForFFAPointsWin();
     }
 
     // ---------- Client entry points (if you ever want to report from client) ----------
@@ -290,6 +298,59 @@ public class LeaderboardManagerLAN : NetworkBehaviour
         if (_scores.TryGetValue(clientId, out var row))
             return row.score;
         return 0;
+    }
+    
+    private void Server_CheckForFFAPointsWin()
+    {
+        if (!IsServer) return;
+
+        var rm = RoomManagerLan.Instance;
+        if (rm == null) return;
+        if (rm.IsTeamsMode) return;
+        if (!rm.UsesPoints) return;
+        if (rm.TargetPointsToWin <= 0) return;
+        if (GameEndScreenLan.Instance == null) return;
+
+        int spawnedPlayers = 0;
+
+        if (NetworkManager.Singleton != null)
+        {
+            foreach (var kvp in NetworkManager.Singleton.ConnectedClients)
+            {
+                if (kvp.Value != null && kvp.Value.PlayerObject != null)
+                    spawnedPlayers++;
+            }
+        }
+
+        // Prevent ending the match before at least two real players are in the FFA match
+        if (spawnedPlayers < 2) return;
+
+        foreach (var row in _scores.Values)
+        {
+            if (row.score >= rm.TargetPointsToWin)
+            {
+                GameEndScreenLan.Instance.Server_ShowGameOverFromPoints();
+                return;
+            }
+        }
+    }
+    public List<PlayerScoreData> Server_GetOrderedSnapshot()
+    {
+        if (!IsServer)
+            return new List<PlayerScoreData>();
+
+        return _scores.Values
+            .OrderByDescending(r => r.score)
+            .ThenBy(r => r.deaths)
+            .Select(r => new PlayerScoreData
+            {
+                clientId = r.clientId,
+                score = r.score,
+                kills = r.kills,
+                deaths = r.deaths,
+                name = ResolveName(r.clientId)
+            })
+            .ToList();
     }
 }
 

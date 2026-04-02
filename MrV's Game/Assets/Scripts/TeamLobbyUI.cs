@@ -2,6 +2,7 @@ using UnityEngine;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class TeamLobbyUI : MonoBehaviour
 {
@@ -18,13 +19,19 @@ public class TeamLobbyUI : MonoBehaviour
     public GameObject moveSelectedPlayerButtonObject; // <-- ADD THIS (host only)
     public GameObject quitButtonObject;
 
+    [Header("Host Only Team Lock")]
+    public GameObject lockTeamsToggleObject;        // host only toggle object
+    public Toggle lockTeamsToggle;                  // Toggle component on that object
+
     private RoomManagerLan rm;
     private ulong? selectedClientId = null;
+    private bool updatingToggleVisual = false;
 
     private void Start()
     {
         rm = RoomManagerLan.Instance;
         RefreshHostOnlyButtons();
+        RefreshTeamLockVisual();
     }
 
     public void ShowLobby()
@@ -33,6 +40,7 @@ public class TeamLobbyUI : MonoBehaviour
         rm = RoomManagerLan.Instance;
 
         RefreshHostOnlyButtons();   // <-- important when lobby opens
+        RefreshTeamLockVisual();
         RebuildLists();
     }
 
@@ -45,15 +53,22 @@ public class TeamLobbyUI : MonoBehaviour
     {
         rm = RoomManagerLan.Instance;
         if (rm != null)
+        {
             rm.LobbyPlayers.OnListChanged += OnLobbyListChanged;
+            rm.OnTeamsLockedChanged += OnTeamsLockedChanged;
+        }
 
         RefreshHostOnlyButtons();   // <-- important if enabled later
+        RefreshTeamLockVisual();
     }
 
     private void OnDisable()
     {
         if (rm != null)
+        {
             rm.LobbyPlayers.OnListChanged -= OnLobbyListChanged;
+            rm.OnTeamsLockedChanged -= OnTeamsLockedChanged;
+        }
     }
 
     private void RefreshHostOnlyButtons()
@@ -68,9 +83,37 @@ public class TeamLobbyUI : MonoBehaviour
         if (moveSelectedPlayerButtonObject != null)
             moveSelectedPlayerButtonObject.SetActive(isHost);
 
+        // Lock Teams toggle: host only
+        if (lockTeamsToggleObject != null)
+            lockTeamsToggleObject.SetActive(isHost);
+
         // Optional: if not host, clear selection so nothing looks "selectable"
         if (!isHost)
             selectedClientId = null;
+    }
+
+    private void RefreshTeamLockVisual()
+    {
+        if (rm == null) return;
+
+        bool teamsLocked = rm.AreTeamsLocked;
+
+        // Hide the Switch Team button for everyone when teams are locked
+        if (switchTeamButtonObject != null)
+            switchTeamButtonObject.SetActive(!teamsLocked);
+
+        // Keep the host toggle visually synced to the real networked value
+        if (lockTeamsToggle != null)
+        {
+            updatingToggleVisual = true;
+            lockTeamsToggle.isOn = teamsLocked;
+            updatingToggleVisual = false;
+        }
+    }
+
+    private void OnTeamsLockedChanged(bool isLocked)
+    {
+        RefreshTeamLockVisual();
     }
 
     private void OnLobbyListChanged(Unity.Netcode.NetworkListEvent<RoomManagerLan.LobbyPlayerState> changeEvent)
@@ -116,7 +159,23 @@ public class TeamLobbyUI : MonoBehaviour
     // Hook this to your Switch Team button OnClick
     public void OnClickSwitchTeam()
     {
-        if (rm != null) rm.SwitchTeamServerRpc();
+        if (rm == null) return;
+        if (rm.AreTeamsLocked) return;
+
+        rm.SwitchTeamServerRpc();
+    }
+
+    // Hook this to your Lock Teams toggle OnValueChanged(bool)
+    public void OnLockTeamsToggleChanged(bool isOn)
+    {
+        if (updatingToggleVisual) return;
+
+        if (NetworkManager.Singleton == null || !NetworkManager.Singleton.IsHost)
+            return;
+
+        if (rm == null) return;
+
+        rm.SetTeamsLockedServerRpc(isOn);
     }
 
     public void OnClickMoveSelectedPlayer()

@@ -74,8 +74,11 @@ public class TeamScoreManagerLan : NetworkBehaviour
     public void Server_AddCTFCapture(RoomManagerLan.TeamId team)
     {
         if (!IsServer) return;
+
         if (team == RoomManagerLan.TeamId.Blue) blueScore.Value++;
         else redScore.Value++;
+        // after point scored, run check to see if points-to-win has been reached
+        Server_CheckForTeamPointsWin();
     }
 
     private IEnumerator Server_RecomputeTotalsLoop()
@@ -89,6 +92,7 @@ public class TeamScoreManagerLan : NetworkBehaviour
             {
                 blueScore.Value = 0;
                 redScore.Value = 0;
+                
                 yield return wait;
                 continue;
             }
@@ -114,11 +118,43 @@ public class TeamScoreManagerLan : NetworkBehaviour
                 }
             }
 
+            // update team points
             blueScore.Value = b;
             redScore.Value = r;
+            
+            //check if points-to-win amount has been reached
+            Server_CheckForTeamPointsWin();
 
             yield return wait;
         }
+    }
+    
+    private void Server_CheckForTeamPointsWin()
+    {
+        if (!IsServer) return;
+
+        var rm = RoomManagerLan.Instance;
+        if (rm == null) return;
+        if (!rm.IsTeamsMode) return;
+        if (!rm.UsesPoints) return;
+        if (rm.TargetPointsToWin <= 0) return;
+        if (!rm.IsMatchStarted) return;
+
+        if (blueScore.Value >= rm.TargetPointsToWin || redScore.Value >= rm.TargetPointsToWin)
+        {
+            GameEndScreenLan.Instance?.Server_ShowGameOverFromPoints();
+        }
+    }
+    
+    // used in EndGameMenu script
+    public int GetBlueScore()
+    {
+        return blueScore.Value;
+    }
+
+    public int GetRedScore()
+    {
+        return redScore.Value;
     }
 }
 
