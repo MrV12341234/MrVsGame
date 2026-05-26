@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 
@@ -85,26 +86,39 @@ public class LauncherProjectileLAN : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        Collider[] hits = Physics.OverlapSphere(transform.position, damageRadius);
+        Collider[] hits = Physics.OverlapSphere(
+            transform.position,
+            damageRadius,
+            ~0,
+            QueryTriggerInteraction.Collide
+        );
+
+        HashSet<ClaymoreMineLAN> damagedMines = new HashSet<ClaymoreMineLAN>();
 
         foreach (Collider collider in hits)
         {
+            // DAMAGE MINES
+            ClaymoreMineLAN mine = collider.GetComponentInParent<ClaymoreMineLAN>();
+            if (mine != null && !damagedMines.Contains(mine))
+            {
+                damagedMines.Add(mine);
+                mine.Server_ApplyMineDamage(damage);
+                continue;
+            }
+
+            // DAMAGE PLAYERS
             if (collider.CompareTag("Player"))
             {
                 PlayerHealthLan targetHealth = collider.GetComponent<PlayerHealthLan>();
                 if (targetHealth != null)
                 {
-                    // Apply damage to the player
                     targetHealth.TakeDamageServerRpc(damage, ownerClientId);
 
-                    // Notify hit/kill manager
                     if (ownerPlayer != null)
                     {
                         PlayerHitAndKillsManagerLAN hitManager = ownerPlayer.GetComponent<PlayerHitAndKillsManagerLAN>();
                         if (hitManager != null)
                         {
-                            // We can't easily check health here, so we'll let PlayerHealthLan handle kill notifications
-                            // Just trigger hit marker for now
                             NotifyHitClientRpc(ownerClientId, damage);
                         }
                     }

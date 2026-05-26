@@ -841,7 +841,7 @@ private void ShowStartFailure(string msg)
         // ensure everyone (including late joiners) exists in LobbyPlayers for team lookup/UI
         UpsertLobbyPlayer(clientId, chosenName, team);
 
-        var spawnPos = IsCTFMode ? GetCTFSpawnPosForTeam(team) : GetRandomSpawnPos();
+        var spawnPos = IsTeamsMode ? GetTeamSpawnPosForTeam(team) : GetRandomSpawnPos();
         var go = Instantiate(playerPrefab, spawnPos, Quaternion.identity);
 
         var netObj = go.GetComponent<NetworkObject>();
@@ -922,9 +922,9 @@ private void ShowStartFailure(string msg)
         return holder.GetChild(idx).position;
     }
 
-    private Vector3 GetCTFSpawnPosForTeam(TeamId team)
+    private Vector3 GetTeamSpawnPosForTeam(TeamId team)
     {
-        if (!IsCTFMode) return GetRandomSpawnPos();
+        if (!IsTeamsMode) return GetRandomSpawnPos();
 
         return (team == TeamId.Blue)
             ? GetSpawnFromHolder(blueCTFSpawnHolder)

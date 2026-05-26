@@ -1,6 +1,8 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
+
 [NetworkMode(NetworkMode.LAN)]
 public class ThrownProjectileLAN : NetworkBehaviour
 {
@@ -123,25 +125,39 @@ public class ThrownProjectileLAN : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        Collider[] hits = Physics.OverlapSphere(transform.position, damageRadius);
+        Collider[] hits = Physics.OverlapSphere(
+            transform.position,
+            damageRadius,
+            ~0,
+            QueryTriggerInteraction.Collide
+        );
+
+        HashSet<ClaymoreMineLAN> damagedMines = new HashSet<ClaymoreMineLAN>();
 
         foreach (Collider collider in hits)
         {
+            // DAMAGE MINES
+            ClaymoreMineLAN mine = collider.GetComponentInParent<ClaymoreMineLAN>();
+            if (mine != null && !damagedMines.Contains(mine))
+            {
+                damagedMines.Add(mine);
+                mine.Server_ApplyMineDamage(damage);
+                continue;
+            }
+
+            // DAMAGE PLAYERS
             if (collider.CompareTag("Player"))
             {
                 PlayerHealthLan targetHealth = collider.GetComponent<PlayerHealthLan>();
                 if (targetHealth != null)
                 {
-                    // Apply damage to the player
                     targetHealth.TakeDamageServerRpc(damage, ownerClientId);
-                    
-                    // Award hit points on server
+
                     if (LeaderboardManagerLAN.Instance != null)
                     {
                         LeaderboardManagerLAN.Instance.Server_AwardHit(ownerClientId);
                     }
 
-                    // Notify hit/kill manager
                     if (ownerPlayer != null)
                     {
                         PlayerHitAndKillsManagerLAN hitManager = ownerPlayer.GetComponent<PlayerHitAndKillsManagerLAN>();

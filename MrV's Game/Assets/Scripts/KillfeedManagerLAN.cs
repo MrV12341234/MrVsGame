@@ -60,7 +60,7 @@ public class KillfeedManagerLAN : NetworkBehaviour
         GameObject item = Instantiate(killfeedItemPrefab, killfeedItemParent);
         // Assumes child[0] is your TMP text, matching your Photon script
         var tmp = item.transform.GetChild(0).GetComponent<TextMeshProUGUI>();
-        if (tmp) tmp.text = $"{killer}  loves  {victim}";
+        if (tmp) tmp.text = $"{killer}  taught  {victim}  a lesson";
 
         // Make sure the text is enabled next frame (so layout/anim refresh is clean)
         StartCoroutine(DelayedEnableKillfeedItem(item.transform.GetChild(0).gameObject));

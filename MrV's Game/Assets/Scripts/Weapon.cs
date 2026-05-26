@@ -191,6 +191,17 @@ public class Weapon : MonoBehaviour
 
             {
                 Quaternion rotation = Quaternion.LookRotation(hit.normal);
+                
+                ClaymoreMineLAN mine = hit.collider.GetComponentInParent<ClaymoreMineLAN>();
+                if (mine != null)
+                {
+                    mine.TakeDamageServerRpc(damagePerShot);
+
+                    if (GameMode.IsLAN)
+                        Instantiate(concreteHitParticle, hit.point, rotation);
+
+                    continue;
+                }
 
                 if (hit.transform.CompareTag("Player"))
                 {

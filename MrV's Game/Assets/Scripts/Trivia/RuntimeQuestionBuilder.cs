@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
+// this script builds runtime questions from the selected JSON set
+
 public static class RuntimeQuestionBuilder
 {
     public static List<RuntimeQuestion> BuildFromSet(QuestionSetFile setFile, string setFolder)

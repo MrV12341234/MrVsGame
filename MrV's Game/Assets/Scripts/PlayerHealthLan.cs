@@ -27,6 +27,21 @@ public class PlayerHealthLan : NetworkBehaviour
         value: 100,
         NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Server);
+    
+    [Header("Spawn Protection")]
+    [SerializeField] private float spawnProtectionSeconds = 3f;
+
+    private float _spawnProtectedUntil = -1f;
+    
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        if (IsServer)
+        {
+            _spawnProtectedUntil = Time.time + spawnProtectionSeconds;
+        }
+    }
 
     private void Start()
     {
@@ -52,7 +67,7 @@ public class PlayerHealthLan : NetworkBehaviour
     {
         UpdateUI(newVal);
 
-        // Only the owning client should see the red flash
+        // Only the owning client should see the red flash when they're hit with a bullet
         if (!IsOwner) return;
 
         // Only flash on damage (health decreased)
@@ -117,10 +132,26 @@ public class PlayerHealthLan : NetworkBehaviour
         currentHealth.Value = maxHealth;
     }
 
+    private bool HasSpawnProtectionFrom(ulong attackerClientId)
+    {
+        if (!IsServer) return false;
+        if (spawnProtectionSeconds <= 0f) return false;
+        if (Time.time >= _spawnProtectedUntil) return false;
+
+        // Allow self-damage and environment damage to still work
+        if (attackerClientId == OwnerClientId) return false;
+        if (attackerClientId == ulong.MaxValue) return false;
+
+        return true;
+    }
+    
     [ServerRpc(RequireOwnership = false)]
     public void TakeDamageServerRpc(int amount, ulong attackerClientId)
     {
         if (currentHealth.Value <= 0) return;
+
+        if (HasSpawnProtectionFrom(attackerClientId))
+            return;
         
         // block friendly fire in Teams mode (server authoritative)
         if (IsFriendlyFire(attackerClientId))

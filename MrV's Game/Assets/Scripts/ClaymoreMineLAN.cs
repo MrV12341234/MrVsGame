@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Netcode;
 using System.Collections;
+using System.Collections.Generic;
 
 [NetworkMode(NetworkMode.LAN)]
 public class ClaymoreMineLAN : NetworkBehaviour
@@ -21,6 +22,11 @@ public class ClaymoreMineLAN : NetworkBehaviour
 
     [Header("Damage")]
     public int damage = 100;
+    [Header("Mine Health")]
+    [Tooltip("How much damage the mine can take before it detonates.")]
+    public int maxHealth = 50;
+
+    private int currentHealth;
 
     [Header("Explosion VFX")]
     [Tooltip("Explosion prefab (particle, SFX, etc.) – visible on all clients.")]
@@ -62,6 +68,7 @@ public class ClaymoreMineLAN : NetworkBehaviour
 
         if (IsServer)
         {
+            currentHealth = maxHealth;
             StartCoroutine(ArmAfterDelay());
             StartCoroutine(SelfDestructAfterLifetime());
         }
@@ -71,6 +78,26 @@ public class ClaymoreMineLAN : NetworkBehaviour
     {
         ownerClientId = clientId;
         ownerPlayer = player;
+    }
+    
+    public void Server_ApplyMineDamage(int damageAmount)
+    {
+        if (!IsServer) return;
+        if (hasExploded) return;
+        if (damageAmount <= 0) return;
+
+        currentHealth -= damageAmount;
+
+        if (currentHealth <= 0)
+        {
+            Explode();
+        }
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void TakeDamageServerRpc(int damageAmount)
+    {
+        Server_ApplyMineDamage(damageAmount);
     }
 
     private IEnumerator ArmAfterDelay()
@@ -132,10 +159,27 @@ public class ClaymoreMineLAN : NetworkBehaviour
     {
         if (!IsServer) return;
 
-        Collider[] hits = Physics.OverlapSphere(transform.position, blastRadius);
+        Collider[] hits = Physics.OverlapSphere(
+            transform.position,
+            blastRadius,
+            ~0,
+            QueryTriggerInteraction.Collide
+        );
+
+        HashSet<ClaymoreMineLAN> damagedMines = new HashSet<ClaymoreMineLAN>();
 
         foreach (Collider collider in hits)
         {
+            // DAMAGE OTHER MINES
+            ClaymoreMineLAN otherMine = collider.GetComponentInParent<ClaymoreMineLAN>();
+            if (otherMine != null && otherMine != this && !damagedMines.Contains(otherMine))
+            {
+                damagedMines.Add(otherMine);
+                otherMine.Server_ApplyMineDamage(damage);
+                continue;
+            }
+
+            // DAMAGE PLAYERS
             if (!collider.CompareTag("Player"))
                 continue;
 
@@ -143,15 +187,12 @@ public class ClaymoreMineLAN : NetworkBehaviour
             if (targetHealth == null)
                 continue;
 
-            // Optional: don't damage owner. Remove this check if you want self-damage / friendly fire.
             NetworkObject netObj = collider.GetComponent<NetworkObject>();
             if (netObj != null && netObj.OwnerClientId == ownerClientId)
                 continue;
 
-            // Apply damage
             targetHealth.TakeDamageServerRpc(damage, ownerClientId);
 
-            // Optional hit-marker logic, following your grenade pattern
             if (ownerPlayer != null)
             {
                 PlayerHitAndKillsManagerLAN hitManager = ownerPlayer.GetComponent<PlayerHitAndKillsManagerLAN>();
