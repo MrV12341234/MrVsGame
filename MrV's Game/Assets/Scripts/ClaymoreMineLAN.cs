@@ -115,11 +115,34 @@ public class ClaymoreMineLAN : NetworkBehaviour
             Explode();
         }
     }
+    
+    private bool TryTriggerFromVehicle(Collider other)
+    {
+        if (other == null)
+            return false;
+
+        // Ignore vehicle seat trigger colliders.
+        // We only want the real car body collider / physical collider.
+        if (other.isTrigger)
+            return false;
+
+        LanVehicleSeatManager vehicle = other.GetComponentInParent<LanVehicleSeatManager>();
+        if (vehicle == null)
+            return false;
+
+        Explode();
+        return true;
+    }
 
     private void OnTriggerEnter(Collider other)
     {
         if (!IsServer) return;
         if (!isArmed || hasExploded) return;
+
+        // Vehicle body collider triggers the mine.
+        // This must happen before the Player tag check because cars are not tagged Player.
+        if (TryTriggerFromVehicle(other))
+            return;
 
         if (!other.CompareTag("Player"))
             return;
@@ -130,6 +153,16 @@ public class ClaymoreMineLAN : NetworkBehaviour
             return;
 
         Explode();
+    }
+    
+    private void OnTriggerStay(Collider other)
+    {
+        if (!IsServer) return;
+        if (!isArmed || hasExploded) return;
+
+        // Backup for cases where the car enters the trigger before the mine finishes arming.
+        if (TryTriggerFromVehicle(other))
+            return;
     }
 
     private void Explode()
@@ -183,11 +216,13 @@ public class ClaymoreMineLAN : NetworkBehaviour
             if (!collider.CompareTag("Player"))
                 continue;
 
-            PlayerHealthLan targetHealth = collider.GetComponent<PlayerHealthLan>();
+            PlayerHealthLan targetHealth = collider.GetComponentInParent<PlayerHealthLan>();
+            
             if (targetHealth == null)
                 continue;
 
-            NetworkObject netObj = collider.GetComponent<NetworkObject>();
+            NetworkObject netObj = targetHealth.GetComponent<NetworkObject>();
+            
             if (netObj != null && netObj.OwnerClientId == ownerClientId)
                 continue;
 
