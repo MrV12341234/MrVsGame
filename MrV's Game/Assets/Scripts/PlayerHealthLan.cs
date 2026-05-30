@@ -311,5 +311,4 @@ public class PlayerHealthLan : NetworkBehaviour
 
         return attackerTeam == victimTeam;
     }
-
 }

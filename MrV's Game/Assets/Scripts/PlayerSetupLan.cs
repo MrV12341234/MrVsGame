@@ -253,6 +253,4 @@ public class PlayerSetupLan : NetworkBehaviour
             Debug.Log("[PlayerSetupLan] No map movement overrides found. Using default movement.");
         }
     }
-
-
 }

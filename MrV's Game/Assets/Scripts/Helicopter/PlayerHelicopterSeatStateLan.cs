@@ -1,13 +1,13 @@
 using System.Collections;
 using TMPro;
 using Unity.Netcode;
-using UnityEngine;
 using Unity.Netcode.Components;
+using UnityEngine;
 
-//attached to the player root
+// Attach to the player root.
 
 [NetworkMode(NetworkMode.LAN)]
-public class PlayerVehicleSeatStateLan : NetworkBehaviour
+public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 {
     [Header("References")]
     public Movement movement;
@@ -16,37 +16,38 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
     public NetworkTransform playerNetworkTransform;
 
     [Header("Weapon Roots")]
-    [Tooltip("Assign the FP weapon parent. Example: FP_Camera/SwayHolder/WeaponSwitcher")]
     public GameObject fpWeaponSwitcherRoot;
-
-    [Tooltip("Assign the TP gun holder root. Example: ScaleFix/Player Model/TP_GunHolder")]
     public GameObject tpGunHolderRoot;
 
     [Header("Prompt UI")]
-    [Tooltip("Assign a TMP_Text under the local player's Canvas.")]
-    public TMP_Text vehiclePromptText;
+    public TMP_Text helicopterPromptText;
 
-    private LanVehicleSeatManager _nearbyVehicle;
+    [Header("Controls UI")]
+    [Tooltip("Separate TMP text box for helicopter controls.")]
+    public TMP_Text helicopterControlsText;
+
+    private LanHelicopterSeatManager _nearbyHelicopter;
     private int _nearbySeatIndex = -1;
-    private bool _nearbySeatIsDriver;
+    private bool _nearbySeatIsPilot;
 
-    private LanVehicleSeatManager _currentVehicle;
+    private LanHelicopterSeatManager _currentHelicopter;
 
     private bool _defaultUseGravity = true;
     private bool _defaultIsKinematic = false;
     private Collider[] _playerColliders;
     private bool _defaultNetworkTransformEnabled = true;
+
     private Coroutine _seatNetworkTransformRoutine;
-    private Coroutine _forceVehicleExitRoutine;
+    private Coroutine _forceExitRoutine;
 
     private readonly NetworkVariable<bool> isSeated =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
-    private readonly NetworkVariable<bool> isDriverSeat =
+    private readonly NetworkVariable<bool> isPilotSeat =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
 
     public bool IsSeated => isSeated.Value;
-    public bool IsDriver => isDriverSeat.Value;
+    public bool IsPilot => isPilotSeat.Value;
 
     public override void OnNetworkSpawn()
     {
@@ -60,25 +61,26 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             _defaultUseGravity = playerRigidbody.useGravity;
             _defaultIsKinematic = playerRigidbody.isKinematic;
         }
-        
+
         if (playerNetworkTransform == null)
             playerNetworkTransform = GetComponent<NetworkTransform>();
 
         if (playerNetworkTransform != null)
             _defaultNetworkTransformEnabled = playerNetworkTransform.enabled;
-        
+
         _playerColliders = GetComponentsInChildren<Collider>(true);
 
         isSeated.OnValueChanged += OnSeatedChanged;
-        isDriverSeat.OnValueChanged += OnDriverChanged;
+        isPilotSeat.OnValueChanged += OnPilotChanged;
 
-        ApplySeatState(isSeated.Value, isDriverSeat.Value);
+        ApplySeatState(isSeated.Value, isPilotSeat.Value);
     }
 
     public override void OnNetworkDespawn()
     {
         isSeated.OnValueChanged -= OnSeatedChanged;
-        isDriverSeat.OnValueChanged -= OnDriverChanged;
+        isPilotSeat.OnValueChanged -= OnPilotChanged;
+
         base.OnNetworkDespawn();
     }
 
@@ -94,32 +96,63 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
         {
             ShowPrompt("Press C to exit");
 
-            if (Input.GetKeyDown(KeyCode.C) && _currentVehicle != null)
+            if (IsPilot)
             {
-                _currentVehicle.RequestExitSeatServerRpc();
+                ShowControls("Use W,A,S,D with left hand and arrow keys with right hand. Q and E fire weapons.");
+            }
+            else
+            {
+                HideControls();
+            }
+
+            UpdateWeaponVisibility(IsSeated, IsPilot);
+
+            if (Input.GetKeyDown(KeyCode.C) && _currentHelicopter != null)
+            {
+                _currentHelicopter.RequestExitSeatServerRpc();
                 return;
             }
 
-            // Only driver sends car movement input
-            if (IsDriver && _currentVehicle != null)
+            if (IsPilot && _currentHelicopter != null)
             {
-                float throttle = Input.GetAxisRaw("Vertical");
-                float steer = Input.GetAxisRaw("Horizontal");
+                float forward = 0f;
+                if (Input.GetKey(KeyCode.W)) forward += 1f;
+                if (Input.GetKey(KeyCode.S)) forward -= 1f;
 
-                _currentVehicle.SetDriverInputServerRpc(throttle, steer);
+                float strafe = 0f;
+                if (Input.GetKey(KeyCode.D)) strafe += 1f;
+                if (Input.GetKey(KeyCode.A)) strafe -= 1f;
+
+                float collective = 0f;
+                if (Input.GetKey(KeyCode.UpArrow)) collective += 1f;
+                if (Input.GetKey(KeyCode.DownArrow)) collective -= 1f;
+
+                float yaw = 0f;
+                if (Input.GetKey(KeyCode.RightArrow)) yaw += 1f;
+                if (Input.GetKey(KeyCode.LeftArrow)) yaw -= 1f;
+
+                _currentHelicopter.SetPilotInputServerRpc(forward, strafe, collective, yaw);
+
+                if (Input.GetKeyDown(KeyCode.Q))
+                    _currentHelicopter.RequestFireHelicopterGunServerRpc(0);
+
+                if (Input.GetKeyDown(KeyCode.E))
+                    _currentHelicopter.RequestFireHelicopterGunServerRpc(1);
             }
 
             return;
         }
 
-        if (_nearbyVehicle != null)
+        HideControls();
+
+        if (_nearbyHelicopter != null)
         {
-            ShowPrompt(_nearbySeatIsDriver ? "Press X to drive" : "Press X to sit");
+            ShowPrompt(_nearbySeatIsPilot ? "Press X to fly" : "Press X to sit");
 
             if (Input.GetKeyDown(KeyCode.X))
             {
-                _currentVehicle = _nearbyVehicle;
-                _currentVehicle.RequestEnterSeatServerRpc(_nearbySeatIndex);
+                _currentHelicopter = _nearbyHelicopter;
+                _currentHelicopter.RequestEnterSeatServerRpc(_nearbySeatIndex);
             }
         }
         else
@@ -127,17 +160,19 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             HidePrompt();
         }
     }
-    
+
     private void LateUpdate()
     {
-        // Only force-enable if truly unparented and not seated
-        if (!isSeated.Value && playerNetworkTransform != null && !playerNetworkTransform.enabled && transform.parent == null)
+        if (!isSeated.Value &&
+            playerNetworkTransform != null &&
+            !playerNetworkTransform.enabled &&
+            transform.parent == null)
         {
             playerNetworkTransform.enabled = true;
         }
     }
 
-    public void SetNearbySeat(LanVehicleSeatManager vehicle, int seatIndex, bool isDriver)
+    public void SetNearbyHelicopterSeat(LanHelicopterSeatManager helicopter, int seatIndex, bool isPilot)
     {
         if (!IsOwner)
             return;
@@ -145,78 +180,77 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
         if (IsSeated)
             return;
 
-        _nearbyVehicle = vehicle;
+        _nearbyHelicopter = helicopter;
         _nearbySeatIndex = seatIndex;
-        _nearbySeatIsDriver = isDriver;
+        _nearbySeatIsPilot = isPilot;
     }
 
-    public void ClearNearbySeat(LanVehicleSeatManager vehicle, int seatIndex)
+    public void ClearNearbyHelicopterSeat(LanHelicopterSeatManager helicopter, int seatIndex)
     {
         if (!IsOwner)
             return;
 
-        if (_nearbyVehicle == vehicle && _nearbySeatIndex == seatIndex)
+        if (_nearbyHelicopter == helicopter && _nearbySeatIndex == seatIndex)
         {
-            _nearbyVehicle = null;
+            _nearbyHelicopter = null;
             _nearbySeatIndex = -1;
-            _nearbySeatIsDriver = false;
+            _nearbySeatIsPilot = false;
 
             if (!IsSeated)
                 HidePrompt();
         }
     }
 
-    public void SetCurrentVehicleReference(LanVehicleSeatManager vehicle)
+    public void SetCurrentHelicopterReference(LanHelicopterSeatManager helicopter)
     {
-        if (_currentVehicle == vehicle)
+        if (_currentHelicopter == helicopter)
             return;
 
-        if (_currentVehicle != null)
-            SetVehicleCollisionIgnore(_currentVehicle, false);
+        if (_currentHelicopter != null)
+            SetHelicopterCollisionIgnore(_currentHelicopter, false);
 
-        _currentVehicle = vehicle;
+        _currentHelicopter = helicopter;
 
-        if (_currentVehicle != null && isSeated.Value)
-            SetVehicleCollisionIgnore(_currentVehicle, true);
+        if (_currentHelicopter != null && isSeated.Value)
+            SetHelicopterCollisionIgnore(_currentHelicopter, true);
     }
 
-    public void ClearCurrentVehicleReference(LanVehicleSeatManager vehicle)
+    public void ClearCurrentHelicopterReference(LanHelicopterSeatManager helicopter)
     {
-        if (_currentVehicle != vehicle)
+        if (_currentHelicopter != helicopter)
             return;
 
-        SetVehicleCollisionIgnore(_currentVehicle, false);
-        _currentVehicle = null;
+        SetHelicopterCollisionIgnore(_currentHelicopter, false);
+        _currentHelicopter = null;
     }
 
-    // Called by the vehicle script on the SERVER
-    public void ServerSetVehicleState(bool seated, bool driverSeatFlag)
+    public void ServerSetHelicopterSeatState(bool seated, bool pilotSeatFlag)
     {
         if (!IsServer)
             return;
 
         isSeated.Value = seated;
-        isDriverSeat.Value = driverSeatFlag;
+        isPilotSeat.Value = pilotSeatFlag;
     }
 
     private void OnSeatedChanged(bool oldValue, bool newValue)
     {
-        ApplySeatState(newValue, isDriverSeat.Value);
+        ApplySeatState(newValue, isPilotSeat.Value);
 
         if (!newValue)
         {
             HidePrompt();
+            HideControls();
         }
     }
 
-    private void OnDriverChanged(bool oldValue, bool newValue)
+    private void OnPilotChanged(bool oldValue, bool newValue)
     {
         ApplySeatState(isSeated.Value, newValue);
     }
 
-    private void ApplySeatState(bool seated, bool driverSeatFlag)
+    private void ApplySeatState(bool seated, bool pilotSeatFlag)
     {
-        // Movement lock only matters for owner
         if (IsOwner)
         {
             if (movement != null)
@@ -225,10 +259,9 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             if (mouseLook != null)
                 mouseLook.SetCharacterBodyRotationLocked(seated);
         }
-        
+
         UpdateSeatNetworkTransformState(seated);
 
-        // Make seated player stable inside moving vehicle
         if (playerRigidbody != null)
         {
             if (seated)
@@ -254,17 +287,22 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
                 }
             }
         }
-        
-        if (_currentVehicle != null)
-            SetVehicleCollisionIgnore(_currentVehicle, seated);
 
+        if (_currentHelicopter != null)
+            SetHelicopterCollisionIgnore(_currentHelicopter, seated);
+
+        UpdateWeaponVisibility(seated, pilotSeatFlag);
+    }
+
+    private void UpdateWeaponVisibility(bool seated, bool pilotSeatFlag)
+    {
         bool flagCarrier = IsThisPlayerCTFFlagCarrier();
 
         if (IsOwner && fpWeaponSwitcherRoot != null)
         {
             bool showFPWeapons = true;
 
-                if (seated && driverSeatFlag)
+            if (seated && pilotSeatFlag)
                 showFPWeapons = false;
 
             if (flagCarrier)
@@ -277,7 +315,7 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
         {
             bool showTPWeapons = true;
 
-                if (seated && driverSeatFlag)
+            if (seated && pilotSeatFlag)
                 showTPWeapons = false;
 
             if (flagCarrier)
@@ -286,8 +324,24 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             tpGunHolderRoot.SetActive(showTPWeapons);
         }
     }
-    
-    
+
+    private bool IsThisPlayerCTFFlagCarrier()
+    {
+        if (RoomManagerLan.Instance == null || !RoomManagerLan.Instance.IsCTFMode)
+            return false;
+
+        var gm = CTFGameManagerLan.Instance;
+        if (gm == null)
+            return false;
+
+        ulong clientId = OwnerClientId;
+
+        bool holdingBlue = gm.blueFlag != null && gm.blueFlag.IsHeldBy(clientId);
+        bool holdingRed = gm.redFlag != null && gm.redFlag.IsHeldBy(clientId);
+
+        return holdingBlue || holdingRed;
+    }
+
     private void UpdateSeatNetworkTransformState(bool seated)
     {
         if (playerNetworkTransform == null)
@@ -300,54 +354,71 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
         }
 
         if (!seated)
-        {
             return;
-        }
 
         _seatNetworkTransformRoutine = StartCoroutine(DisableNetworkTransformDelayed());
     }
-    
-    public void ForceVehicleExitStateFromVehicle(Vector3 worldExitPos, Quaternion worldExitRot)
-    {
-        if (_forceVehicleExitRoutine != null)
-        {
-            StopCoroutine(_forceVehicleExitRoutine);
-            _forceVehicleExitRoutine = null;
-        }
 
-        _forceVehicleExitRoutine = StartCoroutine(ForceVehicleExitStateRoutine(worldExitPos, worldExitRot));
-    }
-
-    private IEnumerator ForceVehicleExitStateRoutine(Vector3 worldExitPos, Quaternion worldExitRot)
+    private IEnumerator DisableNetworkTransformDelayed()
     {
-        // Disable NT and snap to exit position
-        ForceVehicleExitStateOnce(worldExitPos, worldExitRot, true);
+        yield return null;
+        yield return null;
         yield return null;
 
-        // Wait until the parent is actually removed (up to 2 seconds)
+        if (!isSeated.Value)
+        {
+            if (playerNetworkTransform != null)
+                playerNetworkTransform.enabled = true;
+
+            _seatNetworkTransformRoutine = null;
+            yield break;
+        }
+
+        if (playerNetworkTransform != null)
+            playerNetworkTransform.enabled = false;
+
+        _seatNetworkTransformRoutine = null;
+    }
+
+    public void ForceHelicopterExitStateFromHelicopter(Vector3 worldExitPos, Quaternion worldExitRot)
+    {
+        if (_forceExitRoutine != null)
+        {
+            StopCoroutine(_forceExitRoutine);
+            _forceExitRoutine = null;
+        }
+
+        _forceExitRoutine = StartCoroutine(ForceExitRoutine(worldExitPos, worldExitRot));
+    }
+
+    private IEnumerator ForceExitRoutine(Vector3 worldExitPos, Quaternion worldExitRot)
+    {
+        ForceExitStateOnce(worldExitPos, worldExitRot, true);
+        yield return null;
+
         float timeout = 2f;
         float start = Time.time;
+
         while (transform.parent != null && Time.time - start < timeout)
         {
             yield return null;
         }
 
-        // Now it's safe to re-enable the NetworkTransform
         if (playerNetworkTransform != null)
             playerNetworkTransform.enabled = true;
 
-        // Keep forcing enabled for a few extra frames just in case
         for (int i = 0; i < 5; i++)
         {
             if (playerNetworkTransform != null && !playerNetworkTransform.enabled)
                 playerNetworkTransform.enabled = true;
+
             yield return null;
         }
 
-        _forceVehicleExitRoutine = null;
+        _forceExitRoutine = null;
     }
 
-    private void ForceVehicleExitStateOnce(Vector3 worldExitPos, Quaternion worldExitRot, bool snapTransform)
+    private void ForceExitStateOnce(Vector3 worldExitPos, Quaternion worldExitRot, bool snapTransform)
     {
         if (_seatNetworkTransformRoutine != null)
         {
@@ -373,6 +444,7 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
                 mouseLook.SetCharacterBodyRotationLocked(false);
 
             HidePrompt();
+            HideControls();
         }
 
         if (playerRigidbody != null)
@@ -387,48 +459,25 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             }
         }
 
-        if (_currentVehicle != null)
+        if (_currentHelicopter != null)
         {
-            SetVehicleCollisionIgnore(_currentVehicle, false);
-            _currentVehicle = null;
-        }
-    }
-
-    private IEnumerator DisableNetworkTransformDelayed()
-    {
-        // Let parent + seat snap land first
-        yield return null;
-        yield return null;
-        yield return null;
-
-        // Important:
-        // If the player exited before this delayed coroutine finishes,
-        // do NOT disable NetworkTransform.
-        if (!isSeated.Value)
-        {
-            if (playerNetworkTransform != null)
-                playerNetworkTransform.enabled = true;
-
-            _seatNetworkTransformRoutine = null;
-            yield break;
+            SetHelicopterCollisionIgnore(_currentHelicopter, false);
+            _currentHelicopter = null;
         }
 
-        if (playerNetworkTransform != null)
-            playerNetworkTransform.enabled = false;
-
-        _seatNetworkTransformRoutine = null;
+        UpdateWeaponVisibility(false, false);
     }
-    
-    private void SetVehicleCollisionIgnore(LanVehicleSeatManager vehicle, bool ignore)
+
+    private void SetHelicopterCollisionIgnore(LanHelicopterSeatManager helicopter, bool ignore)
     {
-        if (vehicle == null)
+        if (helicopter == null)
             return;
 
         if (_playerColliders == null || _playerColliders.Length == 0)
             _playerColliders = GetComponentsInChildren<Collider>(true);
 
-        var vehicleColliders = vehicle.GetComponentsInChildren<Collider>(true);
-        if (vehicleColliders == null || vehicleColliders.Length == 0)
+        var helicopterColliders = helicopter.GetComponentsInChildren<Collider>(true);
+        if (helicopterColliders == null || helicopterColliders.Length == 0)
             return;
 
         for (int i = 0; i < _playerColliders.Length; i++)
@@ -436,43 +485,38 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             var playerCol = _playerColliders[i];
             if (playerCol == null) continue;
 
-            for (int j = 0; j < vehicleColliders.Length; j++)
+            for (int j = 0; j < helicopterColliders.Length; j++)
             {
-                var vehicleCol = vehicleColliders[j];
-                if (vehicleCol == null) continue;
-                if (playerCol == vehicleCol) continue;
+                var heliCol = helicopterColliders[j];
+                if (heliCol == null) continue;
+                if (playerCol == heliCol) continue;
 
-                Physics.IgnoreCollision(playerCol, vehicleCol, ignore);
+                Physics.IgnoreCollision(playerCol, heliCol, ignore);
             }
         }
     }
 
     private void ShowPrompt(string msg)
     {
-        if (vehiclePromptText != null)
-            vehiclePromptText.text = msg;
+        if (helicopterPromptText != null)
+            helicopterPromptText.text = msg;
     }
 
     private void HidePrompt()
     {
-        if (vehiclePromptText != null)
-            vehiclePromptText.text = "";
+        if (helicopterPromptText != null)
+            helicopterPromptText.text = "";
     }
-    
-    private bool IsThisPlayerCTFFlagCarrier()
+
+    private void ShowControls(string msg)
     {
-        if (RoomManagerLan.Instance == null || !RoomManagerLan.Instance.IsCTFMode)
-            return false;
+        if (helicopterControlsText != null)
+            helicopterControlsText.text = msg;
+    }
 
-        var gm = CTFGameManagerLan.Instance;
-        if (gm == null)
-            return false;
-
-        ulong clientId = OwnerClientId;
-
-        bool holdingBlue = gm.blueFlag != null && gm.blueFlag.IsHeldBy(clientId);
-        bool holdingRed = gm.redFlag != null && gm.redFlag.IsHeldBy(clientId);
-
-        return holdingBlue || holdingRed;
+    private void HideControls()
+    {
+        if (helicopterControlsText != null)
+            helicopterControlsText.text = "";
     }
 }

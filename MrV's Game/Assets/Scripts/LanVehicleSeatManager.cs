@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 // attach to each vehicle root object
@@ -28,9 +29,8 @@ public class LanVehicleSeatManager : NetworkBehaviour
     public int driverSeatIndex = 0;
 
     [Header("Exit")]
-    public float exitRightOffset = 2f;
-    public float exitUpOffset = 0.5f;
-    public float exitForwardOffset = 0.5f;
+    [Tooltip("How high above the seat point the player appears when exiting.")]
+    public float exitUpOffset = 2f;
 
     [Header("Driving")]
     public Rigidbody vehicleRigidbody;
@@ -747,20 +747,31 @@ private void ApplyWallContactSlowdown(Vector3 wallNormal)
             NetworkObject playerNO = client.PlayerObject;
             var seatState = playerNO.GetComponent<PlayerVehicleSeatStateLan>();
 
-            // Remove player from vehicle parent first
-            playerNO.TryRemoveParent(true);
+            // Exit above the seat instead of to the side.
+            // This avoids pushing the player through nearby walls/objects.
+            Transform seatTransform = null;
+
+            if (seatPoints != null && seatIndex >= 0 && seatIndex < seatPoints.Length)
+            {
+                seatTransform = seatPoints[seatIndex];
+            }
+
+            Vector3 finalExitPos = playerNO.transform.position;
+            Quaternion finalExitRot = Quaternion.LookRotation(transform.forward, Vector3.up);
 
             if (placeOutsideVehicle)
             {
-                Vector3 exitPos =
-                    transform.position +
-                    transform.right * exitRightOffset +
-                    transform.forward * exitForwardOffset +
-                    Vector3.up * exitUpOffset;
+                Vector3 baseExitPos = seatTransform != null
+                    ? seatTransform.position
+                    : playerNO.transform.position;
 
-                playerNO.transform.position = exitPos;
-                playerNO.transform.rotation = Quaternion.LookRotation(transform.forward, Vector3.up);
+                // Use vehicle up so it works better on slopes/ramps.
+                finalExitPos = baseExitPos + transform.up * exitUpOffset;
             }
+
+            // Remove player from vehicle parent first, then place them above the car.
+            playerNO.TryRemoveParent(true);
+            playerNO.transform.SetPositionAndRotation(finalExitPos, finalExitRot);
 
             var rb = playerNO.GetComponent<Rigidbody>();
             if (rb != null)
@@ -773,6 +784,16 @@ private void ApplyWallContactSlowdown(Vector3 wallNormal)
             {
                 seatState.ServerSetVehicleState(false, false);
                 seatState.ClearCurrentVehicleReference(this);
+
+                // Force-reset the server/host copy immediately.
+                seatState.ForceVehicleExitStateFromVehicle(finalExitPos, finalExitRot);
+                
+                // REMOVED the hacky nt.enabled = false/true block here. 
+                // It was fighting the Coroutine and breaking the NetworkTransform buffer.
+                
+
+                // Force-reset every client copy too.
+                ForcePlayerVehicleExitStateClientRpc(playerNO, finalExitPos, finalExitRot);
 
                 TargetClearCurrentVehicleClientRpc(NetworkObject, new ClientRpcParams
                 {
@@ -787,6 +808,7 @@ private void ApplyWallContactSlowdown(Vector3 wallNormal)
         seatOccupants[seatIndex] = ulong.MaxValue;
         
         RefreshParkLockState();
+        RefreshSeatTriggerStates();
 
         if (seatIndex == driverSeatIndex)
         {
@@ -902,5 +924,22 @@ private void ApplyWallContactSlowdown(Vector3 wallNormal)
 
             yield return null;
         }
+    }
+    
+    [ClientRpc]
+    private void ForcePlayerVehicleExitStateClientRpc(NetworkObjectReference playerRef, Vector3 worldExitPos, Quaternion worldExitRot)
+    {
+        // ADD THIS: The Server already executed the exit state locally inside ClearSeatServer. 
+        // Running it again via the broadcast RPC corrupts the NetworkTransform state!
+        if (IsServer)
+            return;
+        if (!playerRef.TryGet(out NetworkObject playerNO))
+            return;
+
+        var seatState = playerNO.GetComponent<PlayerVehicleSeatStateLan>();
+        if (seatState == null)
+            return;
+
+        seatState.ForceVehicleExitStateFromVehicle(worldExitPos, worldExitRot);
     }
 }
