@@ -92,9 +92,6 @@ public class ClaymoreWeaponLAN : MonoBehaviour
 
     void Update()
     {
-        Debug.Log("[ClaymoreWeaponLAN] Update. isWeaponActive=" + isWeaponActive 
-                                                                + " claymoresLeft=" + claymoresLeft 
-                                                                + " paused=" + PauseMenuManager.IsGamePaused);
         if (!isWeaponActive)
             return;
         if (PauseMenuManager.IsGamePaused)
@@ -104,7 +101,6 @@ public class ClaymoreWeaponLAN : MonoBehaviour
 
         if (Input.GetButton("Fire1") && timeUntilNextPlace <= 0 && claymoresLeft > 0)
         {
-            Debug.Log("[CLaymoreWeapoonLAN Fire1 registered");
             timeUntilNextPlace = 1f / placeRate;
             StartCoroutine(PlaceClaymoreRoutine());
         }

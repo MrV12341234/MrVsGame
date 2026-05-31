@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 [NetworkMode(NetworkMode.LAN)]
@@ -24,6 +25,9 @@ public class LanHelicopterSeatManager : NetworkBehaviour
     public float climbSpeed = 12f;
     public float acceleration = 18f;
     public float yawDegreesPerSecond = 80f;
+    
+    [Header("Mouse Yaw Smoothing")]
+    public float yawInputSmoothSpeed = 10f;
     
     [Header("Flight Stability")]
     [Tooltip("When true, the helicopter Rigidbody root stays level while flying. Visual tilt is still handled by helicopterVisualRoot.")]
@@ -59,13 +63,14 @@ public class LanHelicopterSeatManager : NetworkBehaviour
     public float gunFireRate = 10f;
     
     [Header("Helicopter Gun Projectile Tuning")]
-    [Tooltip("Projectile force for helicopter potatoes. Same idea as LauncherProjectileLAN shootForce.")]
-    public float helicopterGunShootForce = 1000f;
-    [Tooltip("0 = straight from muzzle. 0.5 = upward arc like handheld launcher. Negative = downward arc.")]
-    public float helicopterGunArcHeightMultiplier = 0f;
+    [Tooltip("Exact projectile speed for helicopter potatoes. This is NOT force.")]
+    public float helicopterGunProjectileSpeed = 25f;
+
+    [Tooltip("How much of the helicopter's current velocity is added to the potato. 0 = ignore helicopter movement.")]
+    public float helicopterGunInheritedVelocityMultiplier = 0f;
     [Tooltip("Extra local pitch angle for the projectile. Positive usually angles the shot downward in Unity.")]
     public float helicopterGunPitchOffsetDegrees = 0f;
-
+    
     private NetworkList<ulong> seatOccupants;
 
     private readonly NetworkVariable<bool> syncedRotorsActive =
@@ -81,9 +86,12 @@ public class LanHelicopterSeatManager : NetworkBehaviour
     private float _serverStrafe;
     private float _serverCollective;
     private float _serverYaw;
+    private float _targetServerYaw;
 
     private bool _isParked = true;
     private bool _isFlying = false;
+    
+    private bool _hasEverHadPilot = false; // used on scene spawn to ensure heli stays still
 
     private float _mainRotorAngle;
     private float _tailRotorAngle;
@@ -97,6 +105,10 @@ public class LanHelicopterSeatManager : NetworkBehaviour
 
         if (helicopterRigidbody == null)
             helicopterRigidbody = GetComponent<Rigidbody>();
+
+        // Scene-placed helicopters should start locked immediately,
+        // before any player can physically push them.
+        ParkHelicopter();
     }
 
     private void OnValidate()
@@ -162,6 +174,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             _serverStrafe = 0f;
             _serverCollective = 0f;
             _serverYaw = 0f;
+            _targetServerYaw = 0f;
 
             syncedForwardInput.Value = 0f;
             syncedStrafeInput.Value = 0f;
@@ -249,24 +262,30 @@ public class LanHelicopterSeatManager : NetworkBehaviour
     {
         helicopterRigidbody.constraints = RigidbodyConstraints.None;
     }
+    
+    _serverYaw = Mathf.MoveTowards(
+        _serverYaw,
+        _targetServerYaw,
+        yawInputSmoothSpeed * deltaTime
+    );
 
-    // Kill physics-added pitch/roll spin. We drive yaw manually.
-    Vector3 angularVelocity = helicopterRigidbody.angularVelocity;
-    helicopterRigidbody.angularVelocity = new Vector3(0f, angularVelocity.y, 0f);
+// Kill physics-added pitch/roll spin.
+// We do NOT need angular velocity for turning because we manually rotate with MoveRotation.
+    helicopterRigidbody.angularVelocity = Vector3.zero;
 
-    Quaternion levelYawRotation = keepRootLevelWhileFlying
+// Keep the root level, but preserve its current yaw direction.
+    Quaternion levelRotation = keepRootLevelWhileFlying
         ? GetLevelYawRotation(helicopterRigidbody.rotation)
         : helicopterRigidbody.rotation;
 
-    Quaternion yawRotation =
-        levelYawRotation *
-        Quaternion.Euler(0f, _serverYaw * yawDegreesPerSecond * deltaTime, 0f);
+// Apply yaw directly.
+// Do not Slerp the yaw, because that makes mouse turning feel almost invisible.
+    float yawDegreesThisFrame = _serverYaw * yawDegreesPerSecond * deltaTime;
 
-    Quaternion nextRotation = keepRootLevelWhileFlying
-        ? Quaternion.Slerp(helicopterRigidbody.rotation, yawRotation, levelCorrectionSpeed * deltaTime)
-        : yawRotation;
+    Quaternion nextRotation =
+        levelRotation * Quaternion.Euler(0f, yawDegreesThisFrame, 0f);
 
-    // Important: force the final rotation to be level.
+// Final safety: keep root level after yaw.
     if (keepRootLevelWhileFlying)
         nextRotation = GetLevelYawRotation(nextRotation);
 
@@ -389,7 +408,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
         if (helicopterVisualRoot == null)
             return;
 
-        float pitch = -syncedForwardInput.Value * maxForwardTilt;
+        float pitch = syncedForwardInput.Value * maxForwardTilt;
         float roll = -syncedStrafeInput.Value * maxSideTilt;
 
         Quaternion target = Quaternion.Euler(pitch, 0f, roll);
@@ -586,6 +605,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             _serverStrafe = 0f;
             _serverCollective = 0f;
             _serverYaw = 0f;
+            _targetServerYaw = 0f;
         }
 
         RefreshSeatTriggerStates();
@@ -615,6 +635,8 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             return;
 
         ulong clientId = seatOccupants[seatIndex];
+       
+        
         if (clientId == ulong.MaxValue)
             return;
 
@@ -623,6 +645,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             client.PlayerObject != null)
         {
             NetworkObject playerNO = client.PlayerObject;
+            
             var seatState = playerNO.GetComponent<PlayerHelicopterSeatStateLan>();
 
             Transform seatTransform = null;
@@ -642,6 +665,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             }
 
             playerNO.TryRemoveParent(true);
+            
             playerNO.transform.SetPositionAndRotation(finalExitPos, finalExitRot);
 
             var rb = playerNO.GetComponent<Rigidbody>();
@@ -658,7 +682,13 @@ public class LanHelicopterSeatManager : NetworkBehaviour
 
                 seatState.ForceHelicopterExitStateFromHelicopter(finalExitPos, finalExitRot);
 
-                ForcePlayerHelicopterExitStateClientRpc(playerNO, finalExitPos, finalExitRot);
+                ForcePlayerHelicopterExitStateClientRpc(playerNO, finalExitPos, finalExitRot, new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = new[] { clientId }
+                    }
+                });
 
                 TargetClearCurrentHelicopterClientRpc(NetworkObject, new ClientRpcParams
                 {
@@ -678,6 +708,7 @@ public class LanHelicopterSeatManager : NetworkBehaviour
             _serverStrafe = 0f;
             _serverCollective = 0f;
             _serverYaw = 0f;
+            _targetServerYaw = 0f;
         }
 
         RefreshSeatTriggerStates();
@@ -708,8 +739,9 @@ public class LanHelicopterSeatManager : NetworkBehaviour
         _serverForward = Mathf.Clamp(forward, -1f, 1f);
         _serverStrafe = Mathf.Clamp(strafe, -1f, 1f);
         _serverCollective = Mathf.Clamp(collective, -1f, 1f);
-        _serverYaw = Mathf.Clamp(yaw, -1f, 1f);
+        _targetServerYaw = Mathf.Clamp(yaw, -1f, 1f);
     }
+    
 
     [ServerRpc(RequireOwnership = false)]
     public void RequestFireHelicopterGunServerRpc(int gunIndex, ServerRpcParams rpcParams = default)
@@ -756,8 +788,15 @@ public class LanHelicopterSeatManager : NetworkBehaviour
         var projectile = projectileNO.GetComponent<LauncherProjectileLAN>();
         if (projectile != null)
         {
-            projectile.shootForce = helicopterGunShootForce;
-            projectile.arcHeightMultiplier = helicopterGunArcHeightMultiplier;
+            Vector3 launchVelocity =
+                projectileRotation * Vector3.forward * helicopterGunProjectileSpeed;
+
+            if (helicopterRigidbody != null)
+            {
+                launchVelocity += helicopterRigidbody.linearVelocity * helicopterGunInheritedVelocityMultiplier;
+            }
+
+            projectile.SetCustomLaunchVelocity(launchVelocity);
             projectile.SetOwner(senderId, ownerPlayer);
         }
 
@@ -853,8 +892,13 @@ public class LanHelicopterSeatManager : NetworkBehaviour
     }
 
     [ClientRpc]
-    private void ForcePlayerHelicopterExitStateClientRpc(NetworkObjectReference playerRef, Vector3 worldExitPos, Quaternion worldExitRot)
+    private void ForcePlayerHelicopterExitStateClientRpc(
+        NetworkObjectReference playerRef,
+        Vector3 worldExitPos,
+        Quaternion worldExitRot,
+        ClientRpcParams clientRpcParams = default)
     {
+        // Host/server already ran its server-side cleanup.
         if (IsServer)
             return;
 

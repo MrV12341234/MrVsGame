@@ -21,10 +21,8 @@ public class LanVehicleSeatManager : NetworkBehaviour
     [Header("Seats")]
     [Tooltip("Size of this array = number of seats in this vehicle.")]
     public Transform[] seatPoints;
-
     [Tooltip("Assign the matching trigger objects in the SAME ORDER as seatPoints.")]
     public LanVehicleSeatTrigger[] seatTriggers;
-
     [Tooltip("Which seat index is the driver seat. Usually 0.")]
     public int driverSeatIndex = 0;
 
@@ -788,10 +786,6 @@ private void ApplyWallContactSlowdown(Vector3 wallNormal)
                 // Force-reset the server/host copy immediately.
                 seatState.ForceVehicleExitStateFromVehicle(finalExitPos, finalExitRot);
                 
-                // REMOVED the hacky nt.enabled = false/true block here. 
-                // It was fighting the Coroutine and breaking the NetworkTransform buffer.
-                
-
                 // Force-reset every client copy too.
                 ForcePlayerVehicleExitStateClientRpc(playerNO, finalExitPos, finalExitRot);
 

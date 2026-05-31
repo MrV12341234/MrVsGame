@@ -89,6 +89,10 @@ public class LanHelicopterSeatTrigger : MonoBehaviour
         var seatState = other.GetComponentInParent<PlayerHelicopterSeatStateLan>();
         if (seatState == null || !seatState.IsOwner)
             return;
+        
+        var vehicleSeatState = other.GetComponentInParent<PlayerVehicleSeatStateLan>();
+        if (vehicleSeatState != null && vehicleSeatState.IsSeated)
+            return;
 
         if (helicopter.IsSeatOccupied(seatIndex))
         {

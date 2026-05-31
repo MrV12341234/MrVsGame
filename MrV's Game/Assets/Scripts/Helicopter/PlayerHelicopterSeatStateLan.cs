@@ -15,6 +15,15 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
     public Rigidbody playerRigidbody;
     public NetworkTransform playerNetworkTransform;
 
+    [Tooltip("Optional. Auto-found if left empty. Used so car and helicopter seat systems do not fight.")]
+    public PlayerVehicleSeatStateLan vehicleSeatState;
+    
+    [Header("Helicopter Mouse Steering")]
+    [Tooltip("How much Mouse X turns the helicopter while piloting.")]
+    public float helicopterMouseYawSensitivity = 3f;
+    [Tooltip("Small dead zone so tiny mouse noise does not slowly turn the helicopter.")]
+    public float helicopterMouseYawDeadZone = 0.001f;
+
     [Header("Weapon Roots")]
     public GameObject fpWeaponSwitcherRoot;
     public GameObject tpGunHolderRoot;
@@ -31,14 +40,20 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
     private bool _nearbySeatIsPilot;
 
     private LanHelicopterSeatManager _currentHelicopter;
+    private float _helicopterMouseYawInput;
 
     private bool _defaultUseGravity = true;
     private bool _defaultIsKinematic = false;
     private Collider[] _playerColliders;
     private bool _defaultNetworkTransformEnabled = true;
-
-    private Coroutine _seatNetworkTransformRoutine;
+    
     private Coroutine _forceExitRoutine;
+    
+    // --- NetworkTransform axis sync defaults (cached on spawn) ---
+    private bool _ntPosX, _ntPosY, _ntPosZ;
+    private bool _ntRotX, _ntRotY, _ntRotZ;
+    private bool _ntScaleX, _ntScaleY, _ntScaleZ;
+    private bool _ntDefaultsCached;
 
     private readonly NetworkVariable<bool> isSeated =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -64,9 +79,12 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
         if (playerNetworkTransform == null)
             playerNetworkTransform = GetComponent<NetworkTransform>();
-
-        if (playerNetworkTransform != null)
-            _defaultNetworkTransformEnabled = playerNetworkTransform.enabled;
+        
+        if (vehicleSeatState == null)
+            vehicleSeatState = GetComponent<PlayerVehicleSeatStateLan>();
+        
+        CacheNetworkTransformDefaults();
+        SetNetworkTransformSeatMode(isSeated.Value);
 
         _playerColliders = GetComponentsInChildren<Collider>(true);
 
@@ -91,6 +109,19 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
         if (PauseMenuManager.IsGamePaused)
             return;
+        
+        // If the player is currently seated in a car/vehicle, this helicopter script should not
+        // control prompts, input, movement lock, or nearby helicopter state.
+        if (vehicleSeatState != null && vehicleSeatState.IsSeated)
+        {
+            _nearbyHelicopter = null;
+            _nearbySeatIndex = -1;
+            _nearbySeatIsPilot = false;
+
+            HidePrompt();
+            HideControls();
+            return;
+        }
 
         if (IsSeated)
         {
@@ -98,7 +129,7 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
             if (IsPilot)
             {
-                ShowControls("Use W,A,S,D with left hand and arrow keys with right hand. Q and E fire weapons.");
+                ShowControls("Space=Up, Shift=Down. Use W/A/S/D to fly. Move mouse left/right to turn. Q/E fire weapons.");
             }
             else
             {
@@ -109,34 +140,57 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
             if (Input.GetKeyDown(KeyCode.C) && _currentHelicopter != null)
             {
+
                 _currentHelicopter.RequestExitSeatServerRpc();
                 return;
             }
 
+            // Only pilot sends helicopter movement input
             if (IsPilot && _currentHelicopter != null)
             {
-                float forward = 0f;
-                if (Input.GetKey(KeyCode.W)) forward += 1f;
-                if (Input.GetKey(KeyCode.S)) forward -= 1f;
-
-                float strafe = 0f;
-                if (Input.GetKey(KeyCode.D)) strafe += 1f;
-                if (Input.GetKey(KeyCode.A)) strafe -= 1f;
+                float forward = Input.GetAxisRaw("Vertical");     // W/S
+                float strafe = Input.GetAxisRaw("Horizontal");    // A/D
 
                 float collective = 0f;
-                if (Input.GetKey(KeyCode.UpArrow)) collective += 1f;
-                if (Input.GetKey(KeyCode.DownArrow)) collective -= 1f;
+                if (Input.GetKey(KeyCode.Space))
+                    collective = 1f;
+                else if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+                    collective = -1f;
 
-                float yaw = 0f;
-                if (Input.GetKey(KeyCode.RightArrow)) yaw += 1f;
-                if (Input.GetKey(KeyCode.LeftArrow)) yaw -= 1f;
+                float mouseX = 0f;
+
+// Use the same mouse value that MouseLook is already receiving.
+// This avoids a case where this script reads Mouse X differently than the camera script.
+                if (mouseLook != null)
+                {
+                    mouseX = mouseLook.LastRawMouseX;
+                }
+                else
+                {
+                    mouseX = Input.GetAxisRaw("Mouse X");
+                }
+
+                if (Mathf.Abs(mouseX) > helicopterMouseYawDeadZone)
+                {
+                    _helicopterMouseYawInput = Mathf.Clamp(
+                        mouseX * helicopterMouseYawSensitivity,
+                        -1f,
+                        1f
+                    );
+                }
+                else
+                {
+                    _helicopterMouseYawInput = 0f;
+                }
+
+                float yaw = _helicopterMouseYawInput;
 
                 _currentHelicopter.SetPilotInputServerRpc(forward, strafe, collective, yaw);
 
-                if (Input.GetKeyDown(KeyCode.Q))
+                if (Input.GetKey(KeyCode.Q))
                     _currentHelicopter.RequestFireHelicopterGunServerRpc(0);
 
-                if (Input.GetKeyDown(KeyCode.E))
+                if (Input.GetKey(KeyCode.E))
                     _currentHelicopter.RequestFireHelicopterGunServerRpc(1);
             }
 
@@ -161,23 +215,18 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
         }
     }
 
-    private void LateUpdate()
-    {
-        if (!isSeated.Value &&
-            playerNetworkTransform != null &&
-            !playerNetworkTransform.enabled &&
-            transform.parent == null)
-        {
-            playerNetworkTransform.enabled = true;
-        }
-    }
-
     public void SetNearbyHelicopterSeat(LanHelicopterSeatManager helicopter, int seatIndex, bool isPilot)
     {
         if (!IsOwner)
             return;
 
         if (IsSeated)
+            return;
+
+        if (vehicleSeatState == null)
+            vehicleSeatState = GetComponent<PlayerVehicleSeatStateLan>();
+
+        if (vehicleSeatState != null && vehicleSeatState.IsSeated)
             return;
 
         _nearbyHelicopter = helicopter;
@@ -260,7 +309,7 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
                 mouseLook.SetCharacterBodyRotationLocked(seated);
         }
 
-        UpdateSeatNetworkTransformState(seated);
+        SetNetworkTransformSeatMode(seated);
 
         if (playerRigidbody != null)
         {
@@ -342,44 +391,6 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
         return holdingBlue || holdingRed;
     }
 
-    private void UpdateSeatNetworkTransformState(bool seated)
-    {
-        if (playerNetworkTransform == null)
-            return;
-
-        if (_seatNetworkTransformRoutine != null)
-        {
-            StopCoroutine(_seatNetworkTransformRoutine);
-            _seatNetworkTransformRoutine = null;
-        }
-
-        if (!seated)
-            return;
-
-        _seatNetworkTransformRoutine = StartCoroutine(DisableNetworkTransformDelayed());
-    }
-
-    private IEnumerator DisableNetworkTransformDelayed()
-    {
-        yield return null;
-        yield return null;
-        yield return null;
-
-        if (!isSeated.Value)
-        {
-            if (playerNetworkTransform != null)
-                playerNetworkTransform.enabled = true;
-
-            _seatNetworkTransformRoutine = null;
-            yield break;
-        }
-
-        if (playerNetworkTransform != null)
-            playerNetworkTransform.enabled = false;
-
-        _seatNetworkTransformRoutine = null;
-    }
-
     public void ForceHelicopterExitStateFromHelicopter(Vector3 worldExitPos, Quaternion worldExitRot)
     {
         if (_forceExitRoutine != null)
@@ -388,29 +399,28 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
             _forceExitRoutine = null;
         }
 
+        if (playerNetworkTransform == null)
+            playerNetworkTransform = GetComponent<NetworkTransform>();
+
         _forceExitRoutine = StartCoroutine(ForceExitRoutine(worldExitPos, worldExitRot));
+        
     }
 
     private IEnumerator ForceExitRoutine(Vector3 worldExitPos, Quaternion worldExitRot)
     {
+        // Snap once only.
         ForceExitStateOnce(worldExitPos, worldExitRot, true);
-        yield return null;
 
-        float timeout = 2f;
-        float start = Time.time;
-
-        while (transform.parent != null && Time.time - start < timeout)
+        // After the first snap, do NOT keep calling ForceExitStateOnce.
+        // That method resets Rigidbody velocity, which can fight gravity/movement.
+        for (int i = 0; i < 20; i++)
         {
-            yield return null;
-        }
 
-        if (playerNetworkTransform != null)
-            playerNetworkTransform.enabled = true;
+            if (movement != null)
+                movement.SetMovementLocked(false);
 
-        for (int i = 0; i < 5; i++)
-        {
-            if (playerNetworkTransform != null && !playerNetworkTransform.enabled)
-                playerNetworkTransform.enabled = true;
+            if (mouseLook != null)
+                mouseLook.SetCharacterBodyRotationLocked(false);
 
             yield return null;
         }
@@ -420,23 +430,18 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
     private void ForceExitStateOnce(Vector3 worldExitPos, Quaternion worldExitRot, bool snapTransform)
     {
-        if (_seatNetworkTransformRoutine != null)
-        {
-            StopCoroutine(_seatNetworkTransformRoutine);
-            _seatNetworkTransformRoutine = null;
-        }
-
         if (playerNetworkTransform == null)
             playerNetworkTransform = GetComponent<NetworkTransform>();
 
-        if (playerNetworkTransform != null && snapTransform)
+        if (snapTransform)
         {
-            playerNetworkTransform.enabled = false;
             transform.SetPositionAndRotation(worldExitPos, worldExitRot);
         }
 
         if (IsOwner)
         {
+            _helicopterMouseYawInput = 0f;
+
             if (movement != null)
                 movement.SetMovementLocked(false);
 
@@ -447,12 +452,16 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
             HideControls();
         }
 
+        // Only the owner should reset their Rigidbody.
+// Non-owner/server observer copies must not keep killing velocity.
         if (playerRigidbody != null)
         {
             playerRigidbody.useGravity = _defaultUseGravity;
             playerRigidbody.isKinematic = _defaultIsKinematic;
 
-            if (!playerRigidbody.isKinematic)
+            // Only clear velocity on the first snap frame.
+            // After that, gravity/falling/movement must be allowed to continue.
+            if (snapTransform && !playerRigidbody.isKinematic)
             {
                 playerRigidbody.linearVelocity = Vector3.zero;
                 playerRigidbody.angularVelocity = Vector3.zero;
@@ -467,7 +476,6 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
         UpdateWeaponVisibility(false, false);
     }
-
     private void SetHelicopterCollisionIgnore(LanHelicopterSeatManager helicopter, bool ignore)
     {
         if (helicopter == null)
@@ -498,14 +506,12 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
 
     private void ShowPrompt(string msg)
     {
-        if (helicopterPromptText != null)
-            helicopterPromptText.text = msg;
+        SeatPromptOwnerLan.Show(this, helicopterPromptText, msg);
     }
 
     private void HidePrompt()
     {
-        if (helicopterPromptText != null)
-            helicopterPromptText.text = "";
+        SeatPromptOwnerLan.Hide(this, helicopterPromptText);
     }
 
     private void ShowControls(string msg)
@@ -519,4 +525,64 @@ public class PlayerHelicopterSeatStateLan : NetworkBehaviour
         if (helicopterControlsText != null)
             helicopterControlsText.text = "";
     }
+    
+    private void CacheNetworkTransformDefaults()
+{
+    if (_ntDefaultsCached) return;
+    if (playerNetworkTransform == null) return;
+
+    _ntPosX = playerNetworkTransform.SyncPositionX;
+    _ntPosY = playerNetworkTransform.SyncPositionY;
+    _ntPosZ = playerNetworkTransform.SyncPositionZ;
+
+    _ntRotX = playerNetworkTransform.SyncRotAngleX;
+    _ntRotY = playerNetworkTransform.SyncRotAngleY;
+    _ntRotZ = playerNetworkTransform.SyncRotAngleZ;
+
+    _ntScaleX = playerNetworkTransform.SyncScaleX;
+    _ntScaleY = playerNetworkTransform.SyncScaleY;
+    _ntScaleZ = playerNetworkTransform.SyncScaleZ;
+
+    _ntDefaultsCached = true;
+}
+
+private void SetNetworkTransformSeatMode(bool seated)
+{
+    if (playerNetworkTransform == null) return;
+
+    CacheNetworkTransformDefaults();
+
+    if (seated)
+    {
+        // While parented to helicopter, we do NOT want the player's NT fighting the parent.
+        playerNetworkTransform.SyncPositionX = false;
+        playerNetworkTransform.SyncPositionY = false;
+        playerNetworkTransform.SyncPositionZ = false;
+
+        playerNetworkTransform.SyncRotAngleX = false;
+        playerNetworkTransform.SyncRotAngleY = false;
+        playerNetworkTransform.SyncRotAngleZ = false;
+
+        // scale usually irrelevant, but safest off while seated
+        playerNetworkTransform.SyncScaleX = false;
+        playerNetworkTransform.SyncScaleY = false;
+        playerNetworkTransform.SyncScaleZ = false;
+    }
+    else
+    {
+        // Restore prefab defaults when unseated
+        playerNetworkTransform.SyncPositionX = _ntPosX;
+        playerNetworkTransform.SyncPositionY = _ntPosY;
+        playerNetworkTransform.SyncPositionZ = _ntPosZ;
+
+        playerNetworkTransform.SyncRotAngleX = _ntRotX;
+        playerNetworkTransform.SyncRotAngleY = _ntRotY;
+        playerNetworkTransform.SyncRotAngleZ = _ntRotZ;
+
+        playerNetworkTransform.SyncScaleX = _ntScaleX;
+        playerNetworkTransform.SyncScaleY = _ntScaleY;
+        playerNetworkTransform.SyncScaleZ = _ntScaleZ;
+    }
+}
+
 }

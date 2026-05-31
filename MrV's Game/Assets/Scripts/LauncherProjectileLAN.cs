@@ -11,6 +11,8 @@ public class LauncherProjectileLAN : NetworkBehaviour
     public float arcHeightMultiplier = 0.5f;
     public float maxLifetime = 20f;
     public float spinStrength = 5f;
+    [Tooltip("If the projectile falls below this world Y position, it explodes/despawns.")]
+    public float selfDestructBelowY = -100f;
 
     [Header("Explosion Settings")]
     public NetworkObject explosionPrefab;
@@ -21,14 +23,26 @@ public class LauncherProjectileLAN : NetworkBehaviour
     private bool hasExploded = false;
     private ulong ownerClientId;
     private GameObject ownerPlayer;
+    
+    // custom for the helicopter guns
+    private bool useCustomLaunchVelocity = false;
+    private Vector3 customLaunchVelocity;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
 
-        // Launch forward with upward arc
-        Vector3 arcDirection = (transform.forward + transform.up * arcHeightMultiplier).normalized;
-        rb.AddForce(arcDirection * shootForce, ForceMode.Impulse);
+        if (useCustomLaunchVelocity)
+        {
+            // Helicopter guns use exact speed, not impulse force.
+            rb.linearVelocity = customLaunchVelocity;
+        }
+        else
+        {
+            // Handheld launcher keeps using the old behavior.
+            Vector3 arcDirection = (transform.forward + transform.up * arcHeightMultiplier).normalized;
+            rb.AddForce(arcDirection * shootForce, ForceMode.Impulse);
+        }
 
         // Apply random twist/spin for realism
         rb.AddTorque(Random.insideUnitSphere * spinStrength, ForceMode.Impulse);
@@ -36,11 +50,31 @@ public class LauncherProjectileLAN : NetworkBehaviour
         // Schedule self-destruction
         StartCoroutine(SelfDestructAfterDelay());
     }
+    
+    void Update()
+    {
+        if (!IsServer)
+            return;
+
+        if (hasExploded)
+            return;
+
+        if (transform.position.y < selfDestructBelowY)
+        {
+            Explode();
+        }
+    }
 
     public void SetOwner(ulong clientId, GameObject player)
     {
         ownerClientId = clientId;
         ownerPlayer = player;
+    }
+    
+    public void SetCustomLaunchVelocity(Vector3 launchVelocity)
+    {
+        useCustomLaunchVelocity = true;
+        customLaunchVelocity = launchVelocity;
     }
 
     void OnCollisionEnter(Collision collision)

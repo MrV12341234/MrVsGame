@@ -235,6 +235,7 @@ MonoBehaviour:
   arcHeightMultiplier: 0.5
   maxLifetime: 40
   spinStrength: 8
+  selfDestructBelowY: -100
   explosionPrefab: {fileID: 1215189772077101638, guid: 5adfbe7f8f1f8e1439a0500007eefa79, type: 3}
   damage: 100
   damageRadius: 13

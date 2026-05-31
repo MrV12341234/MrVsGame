@@ -29,6 +29,9 @@ public class MouseLook : MonoBehaviour
 
     private Vector2 mouseDelta;
     
+    public float LastRawMouseX { get; private set; }
+    public float LastSmoothedMouseX { get; private set; }
+    
     private float _lockedYaw;
 
     [HideInInspector]
@@ -88,6 +91,7 @@ public class MouseLook : MonoBehaviour
 
         // Get raw mouse input for a cleaner reading on more sensitive mice.
         mouseDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"));
+        LastRawMouseX = mouseDelta.x;
 
         // Scale input against the sensitivity setting and multiply that against the smoothing value.
         mouseDelta = Vector2.Scale(mouseDelta, new Vector2(sensitivity.x * smoothing.x, sensitivity.y * smoothing.y));
@@ -95,6 +99,8 @@ public class MouseLook : MonoBehaviour
         // Interpolate mouse movement over time to apply smoothing delta.
         _smoothMouse.x = Mathf.Lerp(_smoothMouse.x, mouseDelta.x, 1f / smoothing.x);
         _smoothMouse.y = Mathf.Lerp(_smoothMouse.y, mouseDelta.y, 1f / smoothing.y);
+        
+        LastSmoothedMouseX = _smoothMouse.x;
 
         // Vertical look always accumulates normally
         _mouseAbsolute.y += _smoothMouse.y;

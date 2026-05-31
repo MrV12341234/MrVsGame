@@ -15,6 +15,9 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
     public Rigidbody playerRigidbody;
     public NetworkTransform playerNetworkTransform;
 
+    [Tooltip("Optional. Auto-found if left empty. Used so car and helicopter seat systems do not fight.")]
+    public PlayerHelicopterSeatStateLan helicopterSeatState;
+
     [Header("Weapon Roots")]
     [Tooltip("Assign the FP weapon parent. Example: FP_Camera/SwayHolder/WeaponSwitcher")]
     public GameObject fpWeaponSwitcherRoot;
@@ -35,9 +38,13 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
     private bool _defaultUseGravity = true;
     private bool _defaultIsKinematic = false;
     private Collider[] _playerColliders;
-    private bool _defaultNetworkTransformEnabled = true;
-    private Coroutine _seatNetworkTransformRoutine;
     private Coroutine _forceVehicleExitRoutine;
+
+// NetworkTransform axis sync defaults
+    private bool _ntPosX, _ntPosY, _ntPosZ;
+    private bool _ntRotX, _ntRotY, _ntRotZ;
+    private bool _ntScaleX, _ntScaleY, _ntScaleZ;
+    private bool _ntDefaultsCached;
 
     private readonly NetworkVariable<bool> isSeated =
         new NetworkVariable<bool>(false, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -63,9 +70,12 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
         
         if (playerNetworkTransform == null)
             playerNetworkTransform = GetComponent<NetworkTransform>();
+        
+        if (helicopterSeatState == null)
+            helicopterSeatState = GetComponent<PlayerHelicopterSeatStateLan>();
 
-        if (playerNetworkTransform != null)
-            _defaultNetworkTransformEnabled = playerNetworkTransform.enabled;
+        CacheNetworkTransformDefaults();
+        SetNetworkTransformSeatMode(isSeated.Value);
         
         _playerColliders = GetComponentsInChildren<Collider>(true);
 
@@ -89,6 +99,18 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
 
         if (PauseMenuManager.IsGamePaused)
             return;
+        
+        // If the player is currently seated in a helicopter, this car script should not
+// control prompts, input, movement lock, or nearby car state.
+        if (helicopterSeatState != null && helicopterSeatState.IsSeated)
+        {
+            _nearbyVehicle = null;
+            _nearbySeatIndex = -1;
+            _nearbySeatIsDriver = false;
+
+            HidePrompt();
+            return;
+        }
 
         if (IsSeated)
         {
@@ -127,15 +149,6 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             HidePrompt();
         }
     }
-    
-    private void LateUpdate()
-    {
-        // Only force-enable if truly unparented and not seated
-        if (!isSeated.Value && playerNetworkTransform != null && !playerNetworkTransform.enabled && transform.parent == null)
-        {
-            playerNetworkTransform.enabled = true;
-        }
-    }
 
     public void SetNearbySeat(LanVehicleSeatManager vehicle, int seatIndex, bool isDriver)
     {
@@ -143,6 +156,12 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             return;
 
         if (IsSeated)
+            return;
+
+        if (helicopterSeatState == null)
+            helicopterSeatState = GetComponent<PlayerHelicopterSeatStateLan>();
+
+        if (helicopterSeatState != null && helicopterSeatState.IsSeated)
             return;
 
         _nearbyVehicle = vehicle;
@@ -226,7 +245,7 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
                 mouseLook.SetCharacterBodyRotationLocked(seated);
         }
         
-        UpdateSeatNetworkTransformState(seated);
+        SetNetworkTransformSeatMode(seated);
 
         // Make seated player stable inside moving vehicle
         if (playerRigidbody != null)
@@ -286,27 +305,6 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             tpGunHolderRoot.SetActive(showTPWeapons);
         }
     }
-    
-    
-    private void UpdateSeatNetworkTransformState(bool seated)
-    {
-        if (playerNetworkTransform == null)
-            return;
-
-        if (_seatNetworkTransformRoutine != null)
-        {
-            StopCoroutine(_seatNetworkTransformRoutine);
-            _seatNetworkTransformRoutine = null;
-        }
-
-        if (!seated)
-        {
-            return;
-        }
-
-        _seatNetworkTransformRoutine = StartCoroutine(DisableNetworkTransformDelayed());
-    }
-    
     public void ForceVehicleExitStateFromVehicle(Vector3 worldExitPos, Quaternion worldExitRot)
     {
         if (_forceVehicleExitRoutine != null)
@@ -315,32 +313,38 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             _forceVehicleExitRoutine = null;
         }
 
+        if (playerNetworkTransform == null)
+            playerNetworkTransform = GetComponent<NetworkTransform>();
+
+        // Do not disable the component. Just restore normal sync axes.
+        if (playerNetworkTransform != null)
+            playerNetworkTransform.enabled = true;
+
+        SetNetworkTransformSeatMode(false);
+
         _forceVehicleExitRoutine = StartCoroutine(ForceVehicleExitStateRoutine(worldExitPos, worldExitRot));
     }
 
     private IEnumerator ForceVehicleExitStateRoutine(Vector3 worldExitPos, Quaternion worldExitRot)
     {
-        // Disable NT and snap to exit position
+        // Snap once only.
         ForceVehicleExitStateOnce(worldExitPos, worldExitRot, true);
-        yield return null;
 
-        // Wait until the parent is actually removed (up to 2 seconds)
-        float timeout = 2f;
-        float start = Time.time;
-        while (transform.parent != null && Time.time - start < timeout)
+        // Keep movement/mouse/NetworkTransform state clean for a few frames.
+        // Do not keep snapping position because that can fight falling/movement.
+        for (int i = 0; i < 20; i++)
         {
-            yield return null;
-        }
-
-        // Now it's safe to re-enable the NetworkTransform
-        if (playerNetworkTransform != null)
-            playerNetworkTransform.enabled = true;
-
-        // Keep forcing enabled for a few extra frames just in case
-        for (int i = 0; i < 5; i++)
-        {
-            if (playerNetworkTransform != null && !playerNetworkTransform.enabled)
+            if (playerNetworkTransform != null)
                 playerNetworkTransform.enabled = true;
+
+            SetNetworkTransformSeatMode(false);
+
+            if (movement != null)
+                movement.SetMovementLocked(false);
+
+            if (mouseLook != null)
+                mouseLook.SetCharacterBodyRotationLocked(false);
+
             yield return null;
         }
 
@@ -349,18 +353,18 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
 
     private void ForceVehicleExitStateOnce(Vector3 worldExitPos, Quaternion worldExitRot, bool snapTransform)
     {
-        if (_seatNetworkTransformRoutine != null)
-        {
-            StopCoroutine(_seatNetworkTransformRoutine);
-            _seatNetworkTransformRoutine = null;
-        }
-
         if (playerNetworkTransform == null)
             playerNetworkTransform = GetComponent<NetworkTransform>();
 
-        if (playerNetworkTransform != null && snapTransform)
+// Never disable the whole NetworkTransform component.
+// Just restore normal sync axes when exiting.
+        if (playerNetworkTransform != null)
+            playerNetworkTransform.enabled = true;
+
+        SetNetworkTransformSeatMode(false);
+
+        if (snapTransform)
         {
-            playerNetworkTransform.enabled = false;
             transform.SetPositionAndRotation(worldExitPos, worldExitRot);
         }
 
@@ -393,32 +397,69 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
             _currentVehicle = null;
         }
     }
-
-    private IEnumerator DisableNetworkTransformDelayed()
-    {
-        // Let parent + seat snap land first
-        yield return null;
-        yield return null;
-        yield return null;
-
-        // Important:
-        // If the player exited before this delayed coroutine finishes,
-        // do NOT disable NetworkTransform.
-        if (!isSeated.Value)
-        {
-            if (playerNetworkTransform != null)
-                playerNetworkTransform.enabled = true;
-
-            _seatNetworkTransformRoutine = null;
-            yield break;
-        }
-
-        if (playerNetworkTransform != null)
-            playerNetworkTransform.enabled = false;
-
-        _seatNetworkTransformRoutine = null;
-    }
     
+    private void CacheNetworkTransformDefaults()
+{
+    if (_ntDefaultsCached) return;
+    if (playerNetworkTransform == null) return;
+
+    _ntPosX = playerNetworkTransform.SyncPositionX;
+    _ntPosY = playerNetworkTransform.SyncPositionY;
+    _ntPosZ = playerNetworkTransform.SyncPositionZ;
+
+    _ntRotX = playerNetworkTransform.SyncRotAngleX;
+    _ntRotY = playerNetworkTransform.SyncRotAngleY;
+    _ntRotZ = playerNetworkTransform.SyncRotAngleZ;
+
+    _ntScaleX = playerNetworkTransform.SyncScaleX;
+    _ntScaleY = playerNetworkTransform.SyncScaleY;
+    _ntScaleZ = playerNetworkTransform.SyncScaleZ;
+
+    _ntDefaultsCached = true;
+}
+
+private void SetNetworkTransformSeatMode(bool seated)
+{
+    if (playerNetworkTransform == null)
+        return;
+
+    CacheNetworkTransformDefaults();
+
+    // Keep the component enabled. We only change the sync checkboxes.
+    playerNetworkTransform.enabled = true;
+
+    if (seated)
+    {
+        // While parented to the vehicle, do not let this player's NetworkTransform
+        // fight the vehicle parent sync.
+        playerNetworkTransform.SyncPositionX = false;
+        playerNetworkTransform.SyncPositionY = false;
+        playerNetworkTransform.SyncPositionZ = false;
+
+        playerNetworkTransform.SyncRotAngleX = false;
+        playerNetworkTransform.SyncRotAngleY = false;
+        playerNetworkTransform.SyncRotAngleZ = false;
+
+        playerNetworkTransform.SyncScaleX = false;
+        playerNetworkTransform.SyncScaleY = false;
+        playerNetworkTransform.SyncScaleZ = false;
+    }
+    else
+    {
+        // Restore prefab defaults when unseated.
+        playerNetworkTransform.SyncPositionX = _ntPosX;
+        playerNetworkTransform.SyncPositionY = _ntPosY;
+        playerNetworkTransform.SyncPositionZ = _ntPosZ;
+
+        playerNetworkTransform.SyncRotAngleX = _ntRotX;
+        playerNetworkTransform.SyncRotAngleY = _ntRotY;
+        playerNetworkTransform.SyncRotAngleZ = _ntRotZ;
+
+        playerNetworkTransform.SyncScaleX = _ntScaleX;
+        playerNetworkTransform.SyncScaleY = _ntScaleY;
+        playerNetworkTransform.SyncScaleZ = _ntScaleZ;
+    }
+}
     private void SetVehicleCollisionIgnore(LanVehicleSeatManager vehicle, bool ignore)
     {
         if (vehicle == null)
@@ -449,14 +490,12 @@ public class PlayerVehicleSeatStateLan : NetworkBehaviour
 
     private void ShowPrompt(string msg)
     {
-        if (vehiclePromptText != null)
-            vehiclePromptText.text = msg;
+        SeatPromptOwnerLan.Show(this, vehiclePromptText, msg);
     }
 
     private void HidePrompt()
     {
-        if (vehiclePromptText != null)
-            vehiclePromptText.text = "";
+        SeatPromptOwnerLan.Hide(this, vehiclePromptText);
     }
     
     private bool IsThisPlayerCTFFlagCarrier()
